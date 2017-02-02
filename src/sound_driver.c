@@ -29,7 +29,7 @@
 # include <sys/audio.h>
 #endif
 #ifdef HAVE_SDL
-# include "SDL.h"
+# include <SDL2/SDL.h>
 long sound_init_device_sdl();
 #endif
 

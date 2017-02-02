@@ -17,7 +17,7 @@
  59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
-#include "SDL.h"
+#include <SDL2/SDL.h>
 #include "defc.h"
 #include "glog.h"
 #include "sound.h"

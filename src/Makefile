@@ -39,6 +39,33 @@ gsplus: $(OBJECTS) compile_time.o
 	echo $(OBJECTS)
 	cp gsplus ..
 
+GSPlus.app : GSPlus.app/Contents/Info.plist GSPlus.app/Contents/MacOS/GSPlus
+
+
+GSPlus.app/Contents:
+	mkdir -p $@
+
+GSPlus.app/Contents/MacOS:
+	mkdir -p $@
+
+
+GSPlus.app/Contents/Frameworks:
+	mkdir -p $@
+
+GSPlus.app/Contents/Info.plist: arch/mac/Info.plist | GSPlus.app/Contents
+	cp -f $^ $@
+
+GSPlus.app/Contents/Frameworks/SDL2.framework: SDL2.framework | GSPlus.app/Contents/Frameworks 
+	cp -rf $^ $@
+
+
+GSPlus.app/Contents/MacOS/GSPlus: gsplus | GSPlus.app/Contents/MacOS 
+	cp -f $^ $@
+
+
+
+
+
 # Linux/OSX XWindows builds
 gsplusx: $(OBJECTS) compile_time.o
 	$(LD) $(CCOPTS) $(LDOPTS) $(OBJECTS) compile_time.o $(LDFLAGS) -o $(NAME)$(SUFFIX) $(XLIBS) $(EXTRA_LIBS) -lX11
