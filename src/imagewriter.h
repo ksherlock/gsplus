@@ -62,7 +62,7 @@
 #include <stdio.h>
 
 #ifdef HAVE_SDL
-#include <SDL2/SDL.h>
+#include "SDL.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H

@@ -35,7 +35,7 @@
 #endif
 
 #ifdef HAVE_SDL
-# include <SDL2/SDL.h>
+# include "SDL.h"
 //@todo: multiple joysticks/more buttons/button config
 //static SDL_Joystick *joy0, *joy1;
 SDL_Joystick *gGameController = NULL;

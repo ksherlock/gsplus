@@ -22,8 +22,8 @@
 */
 
 // @todo: mouse clip bugs.. great western shootout. Paint 8/16.   still in win32
-#include <SDL2/SDL.h>
-//#include "SDL_image.h"
+#include "SDL.h"
+#include "SDL_image.h"
 #include "glog.h"
 
 #include <stdbool.h>

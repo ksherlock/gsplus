@@ -24,7 +24,7 @@
 #include <assert.h>
 #include "defc.h"
 #include "sound.h"
-#include <SDL2/SDL.h>
+#include "SDL.h"
 
 
 extern int Verbose;
