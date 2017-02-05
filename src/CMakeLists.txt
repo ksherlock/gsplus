@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.1)
 project(gsplus)
 
+#
+# cmake -DCMAKE_BUILD_TYPE=Release
+#
+
 INCLUDE (CheckFunctionExists)
 INCLUDE (CheckLibraryExists)
 INCLUDE (CheckTypeSize)
@@ -39,13 +43,16 @@ endif()
 
 
 pkg_check_modules(SDL2 sdl2)
+pkg_check_modules(FREETYPE2 freetype2)
 
 #
 # run ccmake, cmake -LH, or cmake -D...
 #
 set(DRIVER "SDL" CACHE STRING "Driver (SDL, X11, WIN32, FB, or HEADLESS")
-option(ENABLE_DEBUGGER "Enable the debugger" ON)
-option(ENABLE_HOST_FST "Enable host fst support" ON)
+option(DEBUGGER "Enable the debugger" ON)
+option(HOST_FST "Enable host fst support" ON)
+option(TOGGLE_STATUS "Enable F10 Toggle Status support (win32/x11)" OFF)
+
 
 set(generated_headers 8inst_c.h 16inst_c.h 8inst_s.h 16inst_s.h size_c.h size_s.h 8size_s.h 16size_s.h)
 add_custom_command(
@@ -109,37 +116,68 @@ else()
 	set(host_fst_code host_fst.c)
 endif()
 
+# https://cmake.org/cmake/help/latest/prop_tgt/MACOSX_BUNDLE_INFO_PLIST.html
+set(MACOSX_BUNDLE_INFO_STRING "0.12s, Copyright 2016 Dagen Brock")
+set(MACOSX_BUNDLE_COPYRIGHT "Copyright 2016 Dagen Brock")
+set(MACOSX_BUNDLE_LONG_VERSION_STRING "0.12s")
+set(MACOSX_BUNDLE_SHORT_VERSION_STRING "0.12s")
+set(MACOSX_BUNDLE_BUNDLE_VERSION "0.12s")
+set(MACOSX_BUNDLE_ICON_FILE gsp-icons.icns)
+set(MACOSX_BUNDLE_GUI_IDENTIFIER com.dagenbrock.gsplus)
 
-add_executable(gsplus WIN32
+# https://cmake.org/Wiki/CMake:Bundles_And_Frameworks
+# OS X properties.
+add_executable(GSPlus WIN32 MACOSX_BUNDLE
 	adb.c clock.c config.c dis.c engine_c.c scc.c iwm.c 
 	joystick_driver.c moremem.c paddles.c parallel.c printer.cpp sim65816.c
 	smartport.c sound.c sound_driver.c video.c scc_socket_driver.c glog.c
 	imagewriter.cpp scc_imagewriter.c scc_llap.c host_fst.c
 
 
-	$<$<BOOL:${ENABLE_DEBUGGER}>:debug.c>
-	$<$<BOOL:${ENABLE_HOST_FST}>:${host_fst_code}>
+	$<$<BOOL:${DEBUGGER}>:debug.c>
+	$<$<BOOL:${HOST_FST}>:${host_fst_code}>
 	${driver_code}
 	${generated_headers}
 
 	$<$<BOOL:${WIN32}>:win32.rc>
+	$<$<BOOL:${APPLE}>:gsp_icon.icns>
 )
 
-target_link_libraries(gsplus atbridge)
-target_link_libraries(gsplus tfe)
+
+SET_SOURCE_FILES_PROPERTIES(
+  gsp_icon.icns
+  PROPERTIES
+  MACOSX_PACKAGE_LOCATION Resources
+ )
+
+target_link_libraries(GSPlus atbridge)
+target_link_libraries(GSPlus tfe)
 
 if (DRIVER MATCHES "WIN32")
-	target_link_libraries(gsplus comdlg32 Shlwapi IPHlpApi
+	target_link_libraries(GSPlus comdlg32 Shlwapi IPHlpApi
 		winmm gdi32 dsound comctl32 ws2_32 shell32
 	)
 endif()
 
 if (DRIVER MATCHES "SDL")
-	target_link_libraries(gsplus ${SDL2_LDFLAGS} SDL2_image)
-	target_compile_options(gsplus PUBLIC ${SDL2_CFLAGS})
+	target_link_libraries(GSPlus ${SDL2_LDFLAGS} ${FREETYPE2_LDFLAGS} SDL2_image)
+	target_compile_options(GSPlus PUBLIC ${SDL2_CFLAGS} ${FREETYPE2_CFLAGS}  -DHAVE_SDL)
+endif()
+
+if (TOGGLE_STATUS)
+	target_compile_options(GSPlus PUBLIC -DTOGGLE_STATUS)
 endif()
 
 #if (APPLE AND DRIVER MATCHES "SDL")
-#	target_compile_options(gsplus PRIVATE -F${CMAKE_CURRENT_SOURCE_DIR} )
-#	target_link_libraries(gsplus -F${CMAKE_CURRENT_SOURCE_DIR} "-framework SDL2" -Wl,-rpath,@executable_path/../Frameworks)
+#	target_compile_options(GSPlus PRIVATE -F${CMAKE_CURRENT_SOURCE_DIR} )
+#	target_link_libraries(GSPlus -F${CMAKE_CURRENT_SOURCE_DIR} "-framework SDL2" -Wl,-rpath,@executable_path/../Frameworks)
 #endif()
+
+if (APPLE AND CMAKE_BUILD_TYPE MATCHES "Release")
+	add_custom_command(TARGET GSPlus
+		POST_BUILD
+		COMMAND dylibbundler -od -b -x GSPlus.app/Contents/MacOS/GSPlus -d GSPlus.app/Contents/Frameworks
+		#COMMAND cp to_pro partls GSPlus.app/Contents/Resources/
+		COMMENT bundling libraries...
+	)
+endif()
