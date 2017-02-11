@@ -5,16 +5,20 @@ CC = clang
 LD = clang++
 AS = cc
 
-OBJECTS = $(OBJECTS1) $(TFEOBJ) $(ATOBJ) $(PCAPOBJ)  $(FSTOBJ) sdl2_driver.o sdl2snd_driver.o
+OBJECTS = $(OBJECTS1) $(TFEOBJ) $(ATOBJ) $(PCAPOBJ)  $(FSTOBJ) sdl2_driver.o sdl2snd_driver.o fix_mac_menu.o
 ARCHS = ppc, i386, ppc64, x86_64
 
 # OPTIONS FOR COMPILING C SOURCE
-CCOPTS = -g -O0 -Wall -fomit-frame-pointer -std=gnu99 -DHAVE_SDL -DTOGGLE_STATUS -F. -framework SDL2
+CCOPTS = -g -O0 -Wall -fomit-frame-pointer -std=gnu99 -DHAVE_SDL -DTOGGLE_STATUS `pkg-config --cflags freetype2` `pkg-config --cflags sdl2`
 # OPTIONS FOR COMPILING C++ SOURCE
-CPPOPTS = -g -O0 -DHAVE_TFE -DHAVE_SDL -DTOGGLE_STATUS -I/usr/local/include/freetype2 -F. -framework SDL2
+CPPOPTS = -g -O0 -DHAVE_TFE -DHAVE_SDL -DTOGGLE_STATUS `pkg-config --cflags freetype2` `pkg-config --cflags sdl2`
 
 EXTRA_LIBS = -lfreetype
 OPTS = -DGSPLUS_LITTLE_ENDIAN -g  
 SUFFIX =
-LDFLAGS = -framework SDL2 -Wl,-rpath,@executable_path/../Frameworks
+LDFLAGS = `pkg-config --libs freetype2` `pkg-config --libs sdl2` -l SDL2_image -framework Cocoa
 EXTRA_SPECIALS =
+
+
+#-framework SDL2 -Wl,-rpath,@executable_path/../Frameworks
+#-F. -framework SDL2

@@ -141,6 +141,7 @@ add_executable(GSPlus WIN32 MACOSX_BUNDLE
 
 	$<$<BOOL:${WIN32}>:win32.rc>
 	$<$<BOOL:${APPLE}>:gsp_icon.icns>
+	$<$<BOOL:${APPLE}>:fix_mac_menu.m>
 )
 
 
@@ -164,6 +165,9 @@ if (DRIVER MATCHES "SDL")
 	target_compile_options(GSPlus PUBLIC ${SDL2_CFLAGS} ${FREETYPE2_CFLAGS}  -DHAVE_SDL)
 endif()
 
+if (APPLE)
+	target_link_libraries(GSPlus "-framework Cocoa")
+endif()
 if (TOGGLE_STATUS)
 	target_compile_options(GSPlus PUBLIC -DTOGGLE_STATUS)
 endif()
