@@ -4,6 +4,11 @@
 
 void fix_mac_menu(void) {
 
+	/*
+	 * add an option-key modifier to all menu shortcuts
+	 * eg, command-Q -> option+command-Q
+	 */
+
 	@autoreleasepool {
 		if (NSApp) {
 			NSMenu *menu = [NSApp mainMenu];
@@ -16,20 +21,6 @@ void fix_mac_menu(void) {
 				}
 			}
 		}
-
-/*
-			NSMenuItem *item = [menu itemAtIndex: 0];
-			NSMenu *application = [item submenu];
-			for (NSMenuItem *item in [application itemArray]) {
-
-				if ([item action] == @selector(terminate:)) {
-					[item setKeyEquivalentModifierMask: NSEventModifierFlagCommand | NSEventModifierFlagOption];
-				}
-
-			}
-		} 
-*/
-
 	}
 
 }

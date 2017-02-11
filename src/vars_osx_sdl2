@@ -9,14 +9,15 @@ OBJECTS = $(OBJECTS1) $(TFEOBJ) $(ATOBJ) $(PCAPOBJ)  $(FSTOBJ) sdl2_driver.o sdl
 ARCHS = ppc, i386, ppc64, x86_64
 
 # OPTIONS FOR COMPILING C SOURCE
-CCOPTS = -g -O0 -Wall -fomit-frame-pointer -std=gnu99 -DHAVE_SDL -DTOGGLE_STATUS `pkg-config --cflags freetype2` `pkg-config --cflags sdl2`
+CCOPTS = -O2 -Wall -fomit-frame-pointer -std=gnu99 -DHAVE_ICON -DHAVE_SDL -DTOGGLE_STATUS `sdl2-config --cflags`
 # OPTIONS FOR COMPILING C++ SOURCE
-CPPOPTS = -g -O0 -DHAVE_TFE -DHAVE_SDL -DTOGGLE_STATUS `pkg-config --cflags freetype2` `pkg-config --cflags sdl2`
+CPPOPTS = -O2 -DHAVE_TFE -DHAVE_SDL -DTOGGLE_STATUS `freetype-config --cflags` `sdl2-config --cflags`
 
-EXTRA_LIBS = -lfreetype
+EXTRA_LIBS =  -lSDL2_image
 OPTS = -DGSPLUS_LITTLE_ENDIAN -g  
 SUFFIX =
-LDFLAGS = `pkg-config --libs freetype2` `pkg-config --libs sdl2` -l SDL2_image -framework Cocoa
+LDFLAGS = `sdl2-config --static-libs` `freetype-config  --libs` -framework Cocoa
+LDOPTS = 
 EXTRA_SPECIALS =
 
 
