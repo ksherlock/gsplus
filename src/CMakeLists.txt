@@ -51,6 +51,7 @@ pkg_check_modules(FREETYPE2 freetype2)
 set(DRIVER "SDL" CACHE STRING "Driver (SDL, X11, WIN32, FB, or HEADLESS")
 option(DEBUGGER "Enable the debugger" ON)
 option(HOST_FST "Enable host fst support" ON)
+option(HOST_MW "Enable host ModemWorks support" ON)
 option(TOGGLE_STATUS "Enable F10 Toggle Status support (win32/x11)" OFF)
 
 
@@ -136,6 +137,7 @@ add_executable(GSPlus WIN32 MACOSX_BUNDLE
 
 	$<$<BOOL:${DEBUGGER}>:debug.c>
 	$<$<BOOL:${HOST_FST}>:${host_fst_code}>
+	$<$<BOOL:${HOST_MW}>:host_mw.c>
 	${driver_code}
 	${generated_headers}
 

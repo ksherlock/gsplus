@@ -2699,12 +2699,17 @@ do_mvn(word32 banks)
 #endif
 
 extern void host_fst(void);
+extern void host_mw(void);
 
 void
 do_wdm(word32 arg)
 {
 	switch(arg) {
 	case 0x8d: /* Bouncin Ferno does WDM 8d */
+		break;
+
+	case 0xfe: /* modem works */
+		host_mw();
 		break;
 
 	case 0xff: /* fst */
