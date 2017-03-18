@@ -32,6 +32,20 @@ static pid_t child_pid = -1;
 static int mode = 2;
 static int busy = 0;
 static int dtr = 1;
+static int pending_connect = -1;
+
+
+struct search {
+	word16 address;
+	char *string;
+	int length;
+	int state;
+	struct search *next;
+};
+
+
+struct search *search_head = NULL;
+
 
 // OMM
 
@@ -246,6 +260,62 @@ static void hangup() {
 	mode = 0;	
 }
 
+// like forkpty.
+
+static int fork_pipe(int *stdin_fd, int *stdout_fd) {
+	int pipe_in[2];
+	int pipe_out[2];
+
+	if (pipe(pipe_in) < 0) {
+		return -1;
+	}
+
+	if (pipe(pipe_out) < 0) {
+		close(pipe_in[0]);
+		close(pipe_in[1]);
+		return -1;
+	}
+
+	// write to 1, read from 0.
+
+	int pid = fork();
+	if (pid < 0) {
+		close(pipe_in[0]);
+		close(pipe_in[1]);
+		close(pipe_out[0]);
+		close(pipe_out[1]);
+		return -1;
+	}
+
+
+
+	if (pid == 0) {
+		// child.
+
+		// stdin_fd, stdout_fd are not updated.
+
+		dup2(pipe_in[0], STDIN_FILENO);
+		dup2(pipe_out[1], STDOUT_FILENO);
+		dup2(pipe_out[1], STDERR_FILENO);
+
+		close(pipe_in[0]);
+		close(pipe_in[1]);
+		close(pipe_out[0]);
+		close(pipe_out[1]);
+	}
+	else {
+		// parent
+
+		*stdin_fd = pipe_out[0];
+		*stdout_fd = pipe_in[1];
+
+		close(pipe_in[0]);
+		close(pipe_out[1]);
+	}
+
+	return pid;
+}
+
 static void mt() {
 
 	word16 a = engine.acc & 0xff;
@@ -297,59 +367,51 @@ static void mt() {
 
 				mode = modeOrig; // ?
 
+				pending_connect = wfcBusy;
+
+				// ! uses pipes instead of a pty.. any point?
 				if (str[0] == '!') {
 
-					int pipe_in[2];
-					int pipe_out[2];
-					pipe(pipe_in);
-					pipe(pipe_out);
+					int pid = fork_pipe(&stdin_fd, &stdout_fd);
 
-					// write to 1, read from 0.
-
-					int pid = fork();
 					if (pid < 0) {
-						warn("fork");
-						close(pipe_in[0]);
-						close(pipe_in[1]);
-						close(pipe_out[0]);
-						close(pipe_out[1]);
+						warn("fork_pipe");
 						free(str);
-						child_pid = -1;
 						return;
 					}
 					if (pid == 0) {
 						// child.
 
-						dup2(pipe_in[0], STDIN_FILENO);
-						dup2(pipe_out[1], STDOUT_FILENO);
-						dup2(pipe_out[1], STDERR_FILENO);
-
-						close(pipe_in[0]);
-						close(pipe_in[1]);
-						close(pipe_out[0]);
-						close(pipe_out[1]);
-
 						execl("/bin/sh","sh", "-c", str+1, NULL);
 						warn("execl");
 						_exit(255);
 					}
-					else {
-						// parent
-						stdin_fd = pipe_out[0];
-						stdout_fd = pipe_in[1];
 
-						close(pipe_in[0]);
-						close(pipe_out[1]);
+					// parent
+					fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
+					fcntl(stdout_fd, F_SETFL, fcntl(stdout_fd, F_GETFL) | O_NONBLOCK);
 
-						fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
-						fcntl(stdout_fd, F_SETFL, fcntl(stdout_fd, F_GETFL) | O_NONBLOCK);
+					child_pid = pid;
+					pending_connect = wfcConnect;
 
-						child_pid = pid;
-					}
-
+					free(str);
+					break;
 				}
 
-				if (str[0] == '|') {
+				if (!strncmp(str, "telnet://", 9)) {
+					//...
+					free(str);
+					break;
+				}
+				if (!strncmp(str, "ssh://", 6)) {
+					// ...
+					free(str);
+					break;
+				}
+
+				// default
+
+				{
 					/* pseudo terminal */
 					int fd;
 					int pid = forkpty(&fd, NULL, NULL, NULL);
@@ -360,26 +422,22 @@ static void mt() {
 					}
 					if (pid == 0) {
 						/* child */
-						execl("/bin/sh","sh", "-c", str+1, NULL);
+						execl("/bin/sh","sh", "-c", str, NULL);
 						warn("execl");
 						_exit(255);						
-					} else {
-						/* parent */
-						fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-						stdin_fd = fd;
-						stdout_fd = fd;
-						child_pid = pid;
 					}
 
+					/* parent */
+					fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+					stdin_fd = fd;
+					stdout_fd = fd;
+					child_pid = pid;
+					pending_connect = wfcConnect;
+
+					free(str);
+					break;
 				}
 
-				// should flag that we just dialed for handle connect...
-
-				// todo -- open a subprocess ...
-
-				// '|command' -> open a pipe to command
-				// '!command' -> open a pseudo terminal
-				// 'telnet://....'
 				free(str);
 				break;
 			}
@@ -392,9 +450,10 @@ static void mt() {
 			case HandleConnect: {
 				word16 seconds = get_memory16_c(prmtbl, 0);
 
-				// previously connected via dialnumber.
-				if (stdin_fd >= 0 && stdout_fd >= 0) {
-					engine.acc = wfcConnect;
+
+				if (pending_connect >= 0) {
+					engine.acc = pending_connect;
+					pending_connect = -1;
 					break;
 				}
 
@@ -521,6 +580,54 @@ static void mt() {
 	}
 }
 
+static int get_timed_byte(int ticks) {
+
+	CLC();
+	CLV();
+
+	if (stdin_fd < 0) {
+		SEV();
+		return -1;
+	}
+
+	int ok;
+
+	struct pollfd fds;
+	fds.fd = stdin_fd;
+	fds.events = POLLIN;
+	fds.revents = 0;
+
+	ok = poll(&fds, 1, ticks * 1000.0 / 60.0);
+	if (ok < 0) {
+		warn("poll");
+		return -1;
+	}
+	if (ok == 0) return -1;
+
+
+	if (fds.revents & POLLIN) {
+		byte c;
+		ok = read(stdin_fd, &c, 1);
+		if (ok == 1) {
+			//fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
+			engine.acc = c;
+			SEC();
+			return c;
+		}
+
+		if (ok < 0) warn("read");
+	}
+
+	if (fds.revents & (POLLHUP | POLLERR)) {
+		warn("pollerr? %d", fds.revents);
+		SEV(); // carrier lost?
+		hangup();
+		return -1;
+	}
+
+	return -1;
+}
+
 static void pt() {
 
 	word16 a = engine.acc & 0xff;
@@ -587,7 +694,7 @@ static void pt() {
 
 				engine.acc = c; // SX depends on this.
 
-				fprintf(stderr, "-> %02x %c\n", c, isprint(c) ? c : '.');
+				//fprintf(stderr, "-> %02x %c\n", c, isprint(c) ? c : '.');
 
 				break;
 			}
@@ -617,7 +724,7 @@ static void pt() {
 				int ok;
 				ok = read(stdin_fd, &c, 1);
 				if (ok == 1) {
-					fprintf(stderr, "%02x %c\n", c, isprint(c) ? c : '.');
+					//fprintf(stderr, "%02x %c\n", c, isprint(c) ? c : '.');
 					engine.acc = c;
 					SEC();
 				}
@@ -729,61 +836,126 @@ static void pt() {
 				break;
 			}
 			case SerAddSearch: {
-				warnx("SerAddSearch not supported yet");
+				word16 address = get_memory16_c(prmtbl, 0);
+				if (!address) break;
+
+				unsigned length = 0;
+				while (get_memory_c(address + length, 0)) ++length;
+
+				if (!length) break;
+
+				/* check if already on file... */
+				struct search *s = search_head;
+				while (s) {
+					if (s->address == address) return;
+					s = s->next;
+				}
+
+				char *str = malloc(length + 1);
+				for (unsigned i = 0; i < length; ++i)
+					str[i] = toupper(get_memory_c(address + i, 0));
+				str[length] = 0;
+
+				s = malloc(sizeof(struct search));
+				memset(s, 0, sizeof(struct search));
+				s->address = address;
+				s->next = search_head;
+				s->string = str;
+				s->length = length;
+				search_head = s;
+
+				fprintf(stderr, "Adding %04x %s to search\n", address, str);
+
 				break;
 			}
 			case SerDelSearch: {
-				warnx("SerDelSearch not supported yet");
+				word16 address = get_memory16_c(prmtbl, 0);
+				if (!address) break;
+
+				struct search *s = search_head;
+				struct search *prev = NULL;
+				while (s) {
+					if (s->address == address) {
+						if (prev) prev->next = s->next;
+						else search_head = s->next;
+						free(s->string);
+						free(s);
+						break;
+					}
+					prev = s;
+					s = s->next;
+				}
 				break;
 			}
 			case SerClearSearch: {
-				warnx("SerClearSearch not supported yet");
+				struct search *s = search_head;
+				while (s) {
+					struct search *tmp = s->next;
+					free(s->string);
+					free(s);
+					s = tmp;
+				}
+				search_head = NULL;
 				break;
 			}
-			case SerGetSearch: {
-				warnx("SerGetSearch not supported yet");
-				break;
-			}
+			// show search displays it too...
+			/*
+			 * address of matched string is returned in prmtbl[0,1]
+			 * to support SerShowSearch (which calls the console tool 
+			 * to display the character), it also uses the same returns
+			 * as SerGetTimedByte (A/C/V)
+			 */
+			case SerGetSearch: 
 			case SerShowSearch: {
-				warnx("SerShowSearch not supported yet");
+				struct search *s = search_head;
+
+				set_memory16_c(prmtbl, 0, 0);
+				if (!s) break;
+
+
+				int c = get_timed_byte(60); // 1 second
+				if (c < 0) break;
+
+				c = toupper(c);
+
+				for(s = search_head; s; s = s->next) {
+					int state = s->state;
+
+					if (c == s->string[state]) {
+						state++;
+					} else if (c == s->string[0]) {
+						// retry first char if state and failed match.
+						// there is probably a Knuthy algorithm but I 
+						// doubt the original Serial did that.
+						state = 1;
+					} else {
+						state = 0;
+					}
+					s->state = state;
+
+					if (state == s->length) {
+						s->state = 0;
+						break;
+					}
+				}
+
+				if (s) {
+					fprintf(stderr, "SerGetSearch found %04x %s\n", s->address, s->string);
+					set_memory16_c(prmtbl, s->address, 0);
+					// reset all states back to 0 
+					s = search_head;
+					for(s = search_head; s; s = s->next)
+						s->state = 0;
+				}
+
 				break;
 			}
+
 			case SerGetTimedByte: {
 				unsigned ticks = get_memory_c(prmtbl, 0);
 				// tick = 1/60 of a second. = 16.6666 microseconds.
 
-				CLC();
-				CLV();
-
-				if (stdin_fd < 0) {
-					SEV();
-					break;
-				}
-
-				struct pollfd fds;
-				fds.fd = stdin_fd;
-				fds.events = POLLIN;
-				fds.revents = 0;
-
-				int ok = poll(&fds, 1, ticks * 1000.0 / 60.0);
-				if (ok == 0) {
-					break; // timed out, no input.
-				}
-				if (ok == 1) {
-					if (fds.revents & (POLLHUP | POLLERR)) {
-						SEV(); // carrier lost?
-						hangup();
-						break;
-					}
-					byte c;
-					ok = read(stdin_fd, &c, 1);
-					if (ok == 1) {
-						fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
-						engine.acc = c;
-						SEC();
-						break;
-					}
-				}
+				get_timed_byte(ticks);
 
 				break;
 			}
