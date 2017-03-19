@@ -47,6 +47,78 @@ struct search {
 struct search *search_head = NULL;
 
 
+struct url {
+	int schema;
+	char *user;
+	char *password;
+	char *host;
+	char *port;
+	int port_number;
+
+};
+
+
+static int parse_url(char *s, struct url *url) {
+	memset(url, 0, sizeof(struct url));
+	if (!strncmp(s, "telnet://", 9)) {
+		s += 9;
+		url->schema = url->port_number = 23;
+	} else if (!strncmp(s, "ssh://", 6)) {
+		s += 6;
+		url->schema = url->port_number = 22;
+	} else {
+		return 0;
+	}
+
+
+	// telnet://<user>:<password>@<host>:<port>/
+
+	char c = 0;
+
+	char *cp = strchr(s, '@');
+	if (cp != NULL) {
+
+		url->user = s;
+
+		for(;;++s) {
+			char c = *s;
+			if ( c == '@' || c== ':') break; 
+		}
+		*s++ = 0;
+
+		if (c == ':') {
+			url->password = s;
+			for(;;++s) {
+				char c = *s;
+				if (c == '@') break;
+			}
+			*s++ = 0;
+		}
+	}
+
+	url->host = s;
+	for(;;++s) {
+		c = *s;
+		if (c == 0 || c == ':') break;
+	}
+	*s++ = 0;
+	if (c == ':') {
+		// remainder is the port.
+
+		char *tmp;
+		unsigned long l = strtoul(s, &tmp, 10);
+		if (tmp != s && *s == 0 && l <= 0xffff) {
+			url->port_number = l;
+			url->port = s;
+		}
+	}
+
+	return url->schema;
+}
+
+
+
+
 // OMM
 
 #define MSG_INIT 0       // initialize module
@@ -367,7 +439,7 @@ static void mt() {
 
 				mode = modeOrig; // ?
 
-				pending_connect = wfcBusy;
+				pending_connect = wfcCancelled; // so it doesn't try repeatedly.
 
 				// ! uses pipes instead of a pty.. any point?
 				if (str[0] == '!') {
@@ -398,20 +470,76 @@ static void mt() {
 					break;
 				}
 
-				if (!strncmp(str, "telnet://", 9)) {
-					//...
-					free(str);
-					break;
-				}
-				if (!strncmp(str, "ssh://", 6)) {
-					// ...
-					free(str);
-					break;
-				}
 
+				struct url url;
+				int url_type = parse_url(str, &url);
+
+				if (url_type) {
+				 	if (!url.host || ! *url.host) {
+						free(str);
+						break;
+					}
+					fprintf(stderr, "%d - %s : %s @ %s : %s\n",
+						url.schema,
+						url.user ? url.user : "",
+						url.password ? url.password : "",
+						url.host ? url.host : "",
+						url.port ? url.port : ""
+					);
+				}
 				// default
 
 				{
+					char *argv[10];
+					char *program;
+
+					switch(url_type) {
+						case 23: { // telnet
+							int i = 0;
+							program = "/usr/bin/telnet";
+							argv[i++] = "telnet";
+
+							if (url.user) {
+								argv[i++] = "-l";
+								argv[i++] = url.user;
+							}
+
+							argv[i++] = url.host;
+							if (url.port) argv[i++] = url.port;
+							argv[i++] = NULL;
+
+							break;
+						}
+						case 22: { // telnet
+							int i = 0;
+							program = "/usr/bin/ssh";
+							argv[i++] = "ssh";
+
+							if (url.user) {
+								argv[i++] = "-l";
+								argv[i++] = url.user;
+							}
+
+							if (url.port) {
+								argv[i++] = "-p";
+								argv[i++] = url.port;
+							}
+
+							argv[i++] = url.host;
+
+							argv[i++] = NULL;
+
+							break;
+						}
+						default: {
+							program = "/bin/sh";
+							argv[0] = "sh";
+							argv[1] = "-c";
+							argv[2] = str;
+							argv[3] = NULL;
+							break;
+						}
+					}
 					/* pseudo terminal */
 					int fd;
 					int pid = forkpty(&fd, NULL, NULL, NULL);
@@ -422,8 +550,8 @@ static void mt() {
 					}
 					if (pid == 0) {
 						/* child */
-						execl("/bin/sh","sh", "-c", str, NULL);
-						warn("execl");
+						execv(program, argv);
+						warn("execv");
 						_exit(255);						
 					}
 
