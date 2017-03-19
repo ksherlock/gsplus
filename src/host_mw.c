@@ -768,6 +768,8 @@ static void pt() {
 			case SerReadChar:
 			case SerGetDCD:
 			case SerWriteChar:
+			case SerGetSearch:
+			case SerShowSearch:
 				break;
 			default:
 				fprintf(stderr, "PT User Call: %d\n", y);
