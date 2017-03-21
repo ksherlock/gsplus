@@ -12,11 +12,12 @@
 #include <time.h>
 #include <err.h>
 #include <ctype.h>
+#include <poll.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <poll.h>
 #include <netinet/in.h>
+#include <termios.h>
 
 #include <util.h>
 
@@ -791,6 +792,11 @@ static void pt() {
 				break;
 			}
 			case SerSendBreak: {
+				// thought ... if it's a ssh or telnet connection,
+				// break could send the escape character (would require doubling it elsehwere)
+				// or a signal of some sort?
+				if (stdin_fd >= 0)
+					tcsendbreak(stdin_fd, 0);
 				break;
 			}
 			case SerSetDTR: {
@@ -811,6 +817,7 @@ static void pt() {
 				break;
 			}
 			case SerGetSpeed: {
+				// could call cfgetspeed and remap but why bother.
 				engine.acc = 15; // 19200.
 				break;
 			}
@@ -924,6 +931,8 @@ static void pt() {
 			}
 			case SerFlushInQ: {
 				// flush any buffered input...
+				if (stdin_fd >= 0)
+					tcflush(stdin_fd, TCIFLUSH);
 				break;
 			}
 			case SerGetInQ: {
@@ -954,6 +963,7 @@ static void pt() {
 			}
 			case SerSetFlow: {
 				unsigned flow = get_memory_c(prmtbl, 0);
+				// tcflow? 0x04 is xon/xoff (?)
 				break;
 			}
 			// todo...
