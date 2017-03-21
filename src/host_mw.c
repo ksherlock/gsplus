@@ -742,7 +742,7 @@ static int get_timed_byte(int ticks) {
 		byte c;
 		ok = read(stdin_fd, &c, 1);
 		if (ok == 1) {
-			//fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
+			fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
 			engine.acc = c;
 			SEC();
 			return c;
@@ -850,7 +850,6 @@ static void pt() {
 					for (unsigned i = 0; i < count; ++i)
 						tmp[i] = get_memory_c(buffer+i,0);
 					int ok = write(stdout_fd, tmp, count);
-					fprintf(stderr, "wrote %d bytes\n", ok);
 					if (ok < 0) hangup();
 					free(tmp);
 				}
