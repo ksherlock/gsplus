@@ -498,6 +498,7 @@ static void mt() {
 							int i = 0;
 							program = "/usr/bin/telnet";
 							argv[i++] = "telnet";
+							argv[i++] = "-E"; // disable ^] escape.
 
 							if (url.user) {
 								argv[i++] = "-l";
@@ -514,6 +515,9 @@ static void mt() {
 							int i = 0;
 							program = "/usr/bin/ssh";
 							argv[i++] = "ssh";
+
+							argv[i++] = "-e";
+							argv[i++] = "none"; // disable escape char.
 
 							if (url.user) {
 								argv[i++] = "-l";
