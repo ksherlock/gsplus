@@ -84,7 +84,7 @@ static void siginfo_handler(int signum) {
 
   if (g_cur_a2_stat & ALL_STAT_SUPER_HIRES) return; // not text...
 
-  int st80 = g_cur_a2_stat & ALL_STAT_ST80;
+  int st80 = g_cur_a2_stat & ALL_STAT_VID80 /* ALL_STAT_ST80 */;
 
   //if (!(g_cur_a2_stat & ALL_STAT_TEXT)) return; // text is not enabled.
 
