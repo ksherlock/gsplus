@@ -19,7 +19,11 @@
 #include <netinet/in.h>
 #include <termios.h>
 
+#if defined(__linux__)
+#include <pty.h>
+#else
 #include <util.h>
+#endif
 
 #include "defc.h"
 
