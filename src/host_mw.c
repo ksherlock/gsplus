@@ -40,7 +40,7 @@ struct search {
 	word16 address;
 	char *string;
 	int length;
-	int state;
+	word32 state;
 	struct search *next;
 };
 
@@ -501,10 +501,12 @@ static void mt() {
 							argv[i++] = "telnet";
 							argv[i++] = "-E"; // disable ^] escape.
 
+
 							if (url.user) {
 								argv[i++] = "-l";
 								argv[i++] = url.user;
 							}
+							else argv[i++] = "-K"; // disable USER.  BSD only? linux ignores it.
 
 							argv[i++] = url.host;
 							if (url.port) argv[i++] = url.port;
@@ -512,7 +514,8 @@ static void mt() {
 
 							break;
 						}
-						case 22: { // telnet
+						case 22: { // ssh
+							// HMMM user required or it will pass the current user id.
 							int i = 0;
 							program = "/usr/bin/ssh";
 							argv[i++] = "ssh";
@@ -835,7 +838,7 @@ static void pt() {
 
 				engine.acc = c; // SX depends on this.
 
-				//fprintf(stderr, "-> %02x %c\n", c, isprint(c) ? c : '.');
+				fprintf(stderr, "-> %02x %c\n", c, isprint(c) ? c : '.');
 
 				break;
 			}
@@ -851,6 +854,12 @@ static void pt() {
 						tmp[i] = get_memory_c(buffer+i,0);
 					int ok = write(stdout_fd, tmp, count);
 					if (ok < 0) hangup();
+
+					for (unsigned i = 0; i < count; ++i) {
+						byte c = tmp[i];
+						fprintf(stderr, "-> %02x %c\n", c, isprint(c) ? c : '.');
+
+					}
 					free(tmp);
 				}
 
@@ -864,7 +873,7 @@ static void pt() {
 				int ok;
 				ok = read(stdin_fd, &c, 1);
 				if (ok == 1) {
-					//fprintf(stderr, "%02x %c\n", c, isprint(c) ? c : '.');
+					fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
 					engine.acc = c;
 					SEC();
 				}
@@ -986,6 +995,10 @@ static void pt() {
 				while (get_memory_c(address + length, 0)) ++length;
 
 				if (!length) break;
+				if (length > 32) {
+					warnx("search string is too large (%d bytes)", length);
+					break;
+				}
 
 				/* check if already on file... */
 				struct search *s = search_head;
@@ -1062,31 +1075,30 @@ static void pt() {
 				c = toupper(c);
 
 				for(s = search_head; s; s = s->next) {
-					int state = s->state;
+					word32 state = s->state;
+					char *string = s->string;
+					int length = s->length;
 
-					if (c == s->string[state]) {
-						state++;
-					} else if (c == s->string[0]) {
-						// retry first char if state and failed match.
-						// there is probably a Knuthy algorithm but I 
-						// doubt the original Serial did that.
-						state = 1;
-					} else {
-						state = 0;
-					}
-					s->state = state;
+					word32 new_state = 0;
 
-					if (state == s->length) {
-						s->state = 0;
-						break;
+					state = (state << 1) | 1; // shift previous, always check first char. 
+					word32 bitmask = 1;
+
+					for (int i = 0; state; i++, state >>= 1, bitmask <<= 1) {
+						if ((state & 0x01) && (string[i] == c)) {
+							new_state |= bitmask;
+						}
 					}
+
+					s->state = new_state;
+					if (new_state & (1 << (length-1))) break; // match.
 				}
+
 
 				if (s) {
 					fprintf(stderr, "SerGetSearch found %04x %s\n", s->address, s->string);
 					set_memory16_c(prmtbl, s->address, 0);
 					// reset all states back to 0 
-					s = search_head;
 					for(s = search_head; s; s = s->next)
 						s->state = 0;
 				}
