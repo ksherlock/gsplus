@@ -268,6 +268,18 @@ static int parse_url(char *s, struct url *url) {
  * &fn fnRing -> IsRinging
  */
 
+static void non_blocking(int fd) {
+
+	int flags = fcntl(fd, F_GETFL);
+	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void blocking(int fd) {
+
+	int flags = fcntl(fd, F_GETFL);
+	fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+}
+
 static int server_socket(int port, int backlog) {
 	struct sockaddr_in sa;
 
@@ -278,8 +290,7 @@ static int server_socket(int port, int backlog) {
 	int fd = socket(PF_INET, SOCK_STREAM, 0);
 	if (fd < 0) { warn("socket"); return -1; }
 
-	flags = fcntl(fd, F_GETFL);
-	fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+	non_blocking(fd);
 	flags = fcntl(fd, F_GETFD);
 	fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
 
@@ -461,8 +472,8 @@ static void mt() {
 					}
 
 					// parent
-					fcntl(stdin_fd, F_SETFL, fcntl(stdin_fd, F_GETFL) | O_NONBLOCK);
-					fcntl(stdout_fd, F_SETFL, fcntl(stdout_fd, F_GETFL) | O_NONBLOCK);
+					non_blocking(stdin_fd);
+					non_blocking(stdout_fd);
 
 					child_pid = pid;
 					pending_connect = wfcConnect;
@@ -564,7 +575,7 @@ static void mt() {
 					}
 
 					/* parent */
-					fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+					non_blocking(fd);
 					stdin_fd = fd;
 					stdout_fd = fd;
 					child_pid = pid;
@@ -619,7 +630,8 @@ static void mt() {
 					break;
 				}
 				fprintf(stderr, "connection from: %s\n", inet_ntoa(addr.sin_addr));
-				// should inherit non-blocking from socket_fd.
+				// BSD inherits non-blocking, linux does not.
+				non_blocking(fd);
 				stdin_fd = stdout_fd = fd;
 				engine.acc = wfcConnect; // connection established.
 				break;
