@@ -13,6 +13,7 @@
 #include <err.h>
 #include <ctype.h>
 #include <poll.h>
+#include <time.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -38,7 +39,9 @@ static int mode = 2;
 static int busy = 0;
 static int dtr = 1;
 static int pending_connect = -1;
-
+static int in_wait_loop = 0;
+static struct timespec countdown_begin = { 0, 0 };
+static struct timespec countdown_end = { 0, 0 };
 
 struct search {
 	word16 address;
@@ -222,7 +225,21 @@ static int parse_url(char *s, struct url *url) {
 #define SerOutBuffering 28
 #define SerSetDCD 29
 
+// TimeTool
+#define TT_ID		0x7474 //Time Tool ("tt") ID
 
+#define Ticker 0
+#define GetTicks 1
+#define CountDown 2
+#define WaitTicks 3
+#define WaitSeconds 4
+#define SetCounter 5
+#define GetTimeStr 6
+#define FastCPU 7
+#define SlowCPU 8
+
+#define BeginWaitLoop 0x0100
+#define EndWaitLoop 0x0101
 
 // &FN fnMode results and &PICKUP selectors
 #define modeAns 	0
@@ -249,6 +266,10 @@ static int parse_url(char *s, struct url *url) {
 
 #define SEC() engine.psr |= 1
 #define CLC() engine.psr &= ~1
+
+
+#define SEZ() engine.psr |= 0x02
+#define CLZ() engine.psr &= ~0x02
 
 
 #define SEV() engine.psr |= 0x40
@@ -1160,6 +1181,148 @@ static void pt() {
 
 }
 
+/* todo -- getittimer, setitimer() can fire SIGALARM every xx nano seconds */
+static void tt() {
+
+	word16 a = engine.acc & 0xff;
+	word16 x = engine.xreg;
+	word16 y = engine.yreg;
+
+#if 0
+#define Ticker 0
+#define GetTicks 1
+#define CountDown 2
+#define WaitTicks 3
+#define WaitSeconds 4
+#define SetCounter 5
+#define GetTimeStr 6
+#define FastCPU 7
+#define SlowCPU 8
+#endif
+
+	if (a == MSG_USER) {
+		switch(y) {
+			case WaitSeconds: {
+				timespec in;
+				timespec rem;
+
+				// only called IF  callback is null.
+				int seconds = get_memory16_c(prmtbl, 0);
+
+				memset(&rem, 0, sizeof(rem));
+				memset(&in, 0, sizeof(in));
+				in.tv_sec = seconds;
+
+				for(;;) {
+					int ok = nanosleep(&in, &rem);
+					if (ok == 0) break;
+					if (errno == EINTR) {
+						in = rem;
+						continue;
+					}
+					break;
+				}
+				set_memory16_c(prmtbl, 0, 0);
+
+				CLC();
+				break;
+			}
+			case WaitTicks: {
+
+				timespec in;
+				timespec rem;
+
+				// IF callback is null, wait the full tick count.
+				// otherwise, wait 1 tick.
+				int ticks = get_memory16_c(prmtbl, 0);
+				int cb = get_memory16_c(prmtbl+2, 0);
+
+				if (cb) ticks = 1;
+
+				memset(&rem, 0, sizeof(rem));
+				memset(&in, 0, sizeof(in));
+				in.tv_sec = ticks / 60;
+				ticks %= 60;
+				in.tv_nsec = 1000000000L / 60 * ticks;
+
+				for(;;) {
+					int ok = nanosleep(&in, &rem);
+					if (ok == 0) break;
+					if (errno == EINTR) {
+						in = rem;
+						continue;
+					}
+					break;
+				}
+				// undocumented, but original uses ticks as a counter
+				// and decrements.
+				if (!cb) set_memory16_c(prmtbl, 0, 0);
+
+				CLC();
+				break;
+			}
+
+			case GetTimeStr: {
+				// buffer at lowtwr set up previously.
+				char buffer[40];
+				// %a and %b are locale specific, I suppose.
+				struct tm*tm;
+
+				tm = localtime(NULL);
+				strftime(buffer, sizeof(buffer), "%a,%e %b %y %H:%M:%S", tm);
+				break;
+			}
+
+			case CountDown: {
+				timespec tmp;
+				int ok = clock_gettime(CLOCK_MONOTONIC, &tmp);
+
+				CLZ();
+				if (tmp.tv_sec < countdown_end.tv_sec) break;
+
+				if (tmp.tv_sec == countdown_end.tv_sec && tmp.tv_nsec < countdown_end.tv_nsec) break;
+
+				SEZ();
+				break;
+			}
+
+			case SetCounter: {
+				int ticks = get_memory16_c(prmtbl, 0);
+				int ok = clock_gettime(CLOCK_MONOTONIC, &countdown_begin);
+				countdown_end = countdown_begin;
+				countdown_end.tv_sec += ticks / 60;
+				ticks %= 60;
+				countdown_end.tv_nsec += 1000000000L / 60 * ticks;
+				if (countdown_end.tv_nsec >= 1000000000L) {
+					countdown_end.tv_sec += 1;
+					countdown_end.tv_nsec -= 1000000000L;
+				}
+				break;
+			}
+
+			case BeginWaitLoop: {
+				in_wait_loop = 1;
+				break;
+			}
+			case EndWaitLoop: {
+				in_wait_loop = 0;
+				break;
+			}
+
+			default: {
+				fprintf(stderr, "Unsupported TT user call: %d\n", y);
+			}
+
+		}
+		return;
+	}
+
+	switch(a) {
+		default: {
+			fprintf(stderr, "Unsupported TT system call: %d\n", a);
+		}
+	}}
+
 void host_mw(void) {
 	/*
 	 * x = id
@@ -1175,6 +1338,7 @@ void host_mw(void) {
 		// should be endian safe...
 		case PT_ID: pt(); break;
 		case MT_ID: mt(); break;
+		case TT_ID: tt(); break;
 		default:
 			fprintf(stderr, "Unsupported ModemWorks call: (a=%04x, x=%04x, y=%04x)\n", a, x, y);
 			break;
