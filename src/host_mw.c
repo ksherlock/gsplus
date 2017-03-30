@@ -15,6 +15,8 @@
 #include <poll.h>
 #include <time.h>
 
+#include <pthread.h>
+
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -39,9 +41,14 @@ static int mode = 2;
 static int busy = 0;
 static int dtr = 1;
 static int pending_connect = -1;
+
 static int in_wait_loop = 0;
-static struct timespec countdown_begin = { 0, 0 };
-static struct timespec countdown_end = { 0, 0 };
+
+static int timer_countdown = 0;
+static unsigned timer_ticker = 0;
+static pthread_mutex_t timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t timer_cond = PTHREAD_COND_INITIALIZER;
+static pthread_t timer_thread = 0;
 
 struct search {
 	word16 address;
@@ -687,7 +694,8 @@ static void mt() {
 				fds.revents = 0;
 
 				// .25 second check
-				int ok = poll(&fds, 1, 250);
+				int timeout = in_wait_loop ? 0 : 250;
+				int ok = poll(&fds, 1, timeout);
 				if (ok == 1 && fds.revents == POLLIN) {
 					SEC();
 				}
@@ -940,7 +948,7 @@ static void pt() {
 						fds.fd = stdin_fd;
 						fds.events = POLLIN;
 						fds.revents = 0;
-						int ok = poll(&fds, 1, 0);
+						int ok = poll(&fds, 1, -1);
 						if (ok < 0) {
 							if (errno == EINTR || errno == EAGAIN) continue;
 							break;
@@ -1106,7 +1114,7 @@ static void pt() {
 				if (!s) break;
 
 
-				int c = get_timed_byte(60); // 1 second
+				int c = get_timed_byte(in_wait_loop ? 0 : 60); // 1 second
 				if (c < 0) break;
 
 				c = toupper(c);
@@ -1181,6 +1189,75 @@ static void pt() {
 
 }
 
+
+
+
+
+static void *timer_thread_func(void *vp) {
+	struct timespec ts = { 0, 1000000000L / 60 };
+	struct timespec rem;
+
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
+	for(;;) {
+		int ok = nanosleep(&ts, &rem);
+		if (ok < 0 && errno == EINTR) {
+			ts = rem;
+			continue;
+		}
+		ts = (struct timespec){ 0, 1000000000L / 60 };
+
+		if (timer_countdown) __sync_sub_and_fetch(&timer_countdown, 1);
+
+		pthread_cond_broadcast(&timer_cond);
+	}
+}
+
+
+// start a thread to broadcast a condition each tick.
+static void begin_ticker() {
+
+	if (timer_thread) return;
+	fprintf(stderr, "Starting ticker thread\n");
+	pthread_create (&timer_thread, NULL, timer_thread_func, NULL);
+
+}
+
+
+static void end_ticker() {
+
+	if (timer_thread) pthread_cancel(timer_thread);
+	timer_thread = 0;
+}
+
+
+/*
+ * check if on the leading edge of a tick (ie, very short wait for the condition variable)
+ *
+ */
+static int leading_edge() {
+	if (!timer_thread) { 
+		begin_ticker();
+		return 1;
+	}
+	struct timespec ts;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+
+	ts.tv_nsec += 1000000000L / 600000; //? 
+	if (ts.tv_nsec > 1000000000L) {
+		ts.tv_nsec -= 1000000000L;
+		ts.tv_sec += 1;
+	}
+
+	pthread_mutex_lock(&timer_mutex);
+	int ok = pthread_cond_timedwait(&timer_cond, &timer_mutex, &ts);
+	pthread_mutex_unlock(&timer_mutex);
+
+	return ok == 0;
+}
+
 /* todo -- getittimer, setitimer() can fire SIGALARM every xx nano seconds */
 static void tt() {
 
@@ -1188,23 +1265,24 @@ static void tt() {
 	word16 x = engine.xreg;
 	word16 y = engine.yreg;
 
-#if 0
-#define Ticker 0
-#define GetTicks 1
-#define CountDown 2
-#define WaitTicks 3
-#define WaitSeconds 4
-#define SetCounter 5
-#define GetTimeStr 6
-#define FastCPU 7
-#define SlowCPU 8
-#endif
 
 	if (a == MSG_USER) {
 		switch(y) {
+			case Ticker: {
+				if (leading_edge()) { SEC(); }
+				else { CLC(); }
+				break;
+			}
+
+			case GetTicks: {
+				if (leading_edge()) timer_ticker++;
+				set_memory16_c(prmtbl, timer_ticker, 0);
+				break;
+			}
+
 			case WaitSeconds: {
-				timespec in;
-				timespec rem;
+				struct timespec in;
+				struct timespec rem;
 
 				// only called IF  callback is null.
 				int seconds = get_memory16_c(prmtbl, 0);
@@ -1229,8 +1307,8 @@ static void tt() {
 			}
 			case WaitTicks: {
 
-				timespec in;
-				timespec rem;
+				struct timespec in;
+				struct timespec rem;
 
 				// IF callback is null, wait the full tick count.
 				// otherwise, wait 1 tick.
@@ -1243,7 +1321,7 @@ static void tt() {
 				memset(&in, 0, sizeof(in));
 				in.tv_sec = ticks / 60;
 				ticks %= 60;
-				in.tv_nsec = 1000000000L / 60 * ticks;
+				in.tv_nsec = (1000000000L / 60) * ticks;
 
 				for(;;) {
 					int ok = nanosleep(&in, &rem);
@@ -1263,40 +1341,32 @@ static void tt() {
 			}
 
 			case GetTimeStr: {
+				// "Fri, 6 Mar 92 12:54:36"
+
 				// buffer at lowtwr set up previously.
 				char buffer[40];
 				// %a and %b are locale specific, I suppose.
-				struct tm*tm;
+				struct tm* tm;
+				time_t clock;
 
-				tm = localtime(NULL);
+				clock = time(NULL);
+				tm = localtime(&clock);
+				// todo -- do it manually to skip the strftime locale stuff.
 				strftime(buffer, sizeof(buffer), "%a,%e %b %y %H:%M:%S", tm);
 				break;
 			}
 
 			case CountDown: {
-				timespec tmp;
-				int ok = clock_gettime(CLOCK_MONOTONIC, &tmp);
-
-				CLZ();
-				if (tmp.tv_sec < countdown_end.tv_sec) break;
-
-				if (tmp.tv_sec == countdown_end.tv_sec && tmp.tv_nsec < countdown_end.tv_nsec) break;
-
-				SEZ();
+				if (timer_countdown <= 0) { SEZ(); }
+				else { CLZ(); }
 				break;
 			}
 
 			case SetCounter: {
 				int ticks = get_memory16_c(prmtbl, 0);
-				int ok = clock_gettime(CLOCK_MONOTONIC, &countdown_begin);
-				countdown_end = countdown_begin;
-				countdown_end.tv_sec += ticks / 60;
-				ticks %= 60;
-				countdown_end.tv_nsec += 1000000000L / 60 * ticks;
-				if (countdown_end.tv_nsec >= 1000000000L) {
-					countdown_end.tv_sec += 1;
-					countdown_end.tv_nsec -= 1000000000L;
-				}
+
+				timer_countdown = ticks;
+				if (!timer_thread) begin_ticker();
 				break;
 			}
 
