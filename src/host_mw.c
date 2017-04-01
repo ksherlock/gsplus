@@ -269,6 +269,7 @@ static int parse_url(char *s, struct url *url) {
 
 
 #define prmtbl 0xe0
+#define lowtr 0x9b
 
 
 #define SEC() engine.psr |= 1
@@ -1267,6 +1268,15 @@ static void tt() {
 
 
 	if (a == MSG_USER) {
+
+/*
+		switch(y) {
+			case WaitTicks:
+				break;
+			default:
+				fprintf(stderr, "TT User Call: %d\n", y);
+		}
+*/
 		switch(y) {
 			case Ticker: {
 				if (leading_edge()) { SEC(); }
@@ -1341,18 +1351,34 @@ static void tt() {
 			}
 
 			case GetTimeStr: {
-				// "Fri, 6 Mar 92 12:54:36"
+				static char dd[] = "SunMonTueWedThuFriSat";
+				static char mm[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+				// "Fri,  6 Mar 92 12:54:36"
+				// "Fri, 30 Mar 17 00:11:22"
 
 				// buffer at lowtwr set up previously.
-				char buffer[40];
+
+				unsigned address = get_memory16_c(lowtr+1, 0);
+
+				char buffer[24];
 				// %a and %b are locale specific, I suppose.
 				struct tm* tm;
 				time_t clock;
 
 				clock = time(NULL);
 				tm = localtime(&clock);
-				// todo -- do it manually to skip the strftime locale stuff.
-				strftime(buffer, sizeof(buffer), "%a,%e %b %y %H:%M:%S", tm);
+				// do it manually to skip the strftime locale stuff.
+				//int ok = strftime(buffer, sizeof(buffer), "%a, %e %b %y %H:%M:%S", tm);
+				if (tm->tm_sec >= 60) tm->tm_sec = 59; // leap second?
+				int ok = snprintf(buffer, sizeof(buffer), "%.3s, %2u %.3s %02u %02u:%02u:%02u",
+					dd + tm->tm_wday * 3,
+					tm->tm_mday,
+					mm + tm->tm_mon * 3,
+					tm->tm_year % 100,
+					tm->tm_hour, tm->tm_min, tm->tm_sec
+				);
+				for (int i = 0; i <= ok; ++i) set_memory_c(address+i, buffer[i], 0);
 				break;
 			}
 
@@ -1387,8 +1413,17 @@ static void tt() {
 		return;
 	}
 
+	fprintf(stderr, "TT %d\n", a);
 	switch(a) {
 		default: {
+			case MSG_INIT:
+			case MSG_QUIT: {
+				end_ticker();
+				in_wait_loop = 0;
+				timer_countdown = 0;
+				timer_ticker = 0;
+				break;
+			}
 			fprintf(stderr, "Unsupported TT system call: %d\n", a);
 		}
 	}}
