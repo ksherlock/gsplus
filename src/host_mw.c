@@ -1439,6 +1439,16 @@ void host_mw(void) {
 	word16 x = engine.xreg;
 	word16 y = engine.yreg;
 
+
+	/* if there's an active connection, tell everybody else to go away) */
+	if (socket_fd >= 0 && stdin_fd >= 0) {
+		int fd = accept(socket_fd, NULL, NULL);
+		if (fd >= 0) {
+			write(fd, "\r\nProline is busy. Please try again later.\r\n", 44);
+			close(fd);
+		}
+	}
+
 	switch(x) {
 		// should be endian safe...
 		case PT_ID: pt(); break;
