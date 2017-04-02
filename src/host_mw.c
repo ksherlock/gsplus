@@ -789,21 +789,30 @@ static int get_timed_byte(int ticks) {
 
 	if (fds.revents & POLLIN) {
 		byte c;
-		ok = read(stdin_fd, &c, 1);
+		do{
+			ok = read(stdin_fd, &c, 1);
+		} while (ok == -1 && errno == EINTR);
+
+		if (ok < 0) warn("read");
+
+		if (ok == 0) {
+			hangup();
+			SEV();
+			return -1;
+		}
+
 		if (ok == 1) {
 			fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
 			engine.acc = c;
 			SEC();
 			return c;
 		}
-
-		if (ok < 0) warn("read");
 	}
 
 	if (fds.revents & (POLLHUP | POLLERR)) {
 		warn("pollerr? %d", fds.revents);
-		SEV(); // carrier lost?
 		hangup();
+		SEV(); // carrier lost?
 		return -1;
 	}
 
@@ -912,18 +921,7 @@ static void pt() {
 				break;
 			}
 			case SerReadChar: {
-				CLC();
-				if (stdin_fd < 0) break;
-
-				byte c;
-				int ok;
-				ok = read(stdin_fd, &c, 1);
-				if (ok == 1) {
-					fprintf(stderr, "<- %02x %c\n", c, isprint(c) ? c : '.');
-					engine.acc = c;
-					SEC();
-				}
-				if (ok == 0) { /* eof */ hangup(); }
+				get_timed_byte(0);
 				break;
 			}
 			case SerReadBuffer: {
