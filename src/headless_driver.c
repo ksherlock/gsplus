@@ -130,7 +130,7 @@ main(int argc, char **argv)
   memset(&sa, 0, sizeof(sa));
 
   sa.sa_flags = SA_RESTART;
-  sa.sa_handlers = siginfo_handler;
+  sa.sa_handler = siginfo_handler;
 
 	#if defined(SIGINFO)
 	/* control-T by default */
