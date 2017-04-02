@@ -14,7 +14,6 @@ INCLUDE (CheckCSourceCompiles)
 INCLUDE (FindPkgConfig)
 INCLUDE (TestBigEndian)
 
-
 set(PACKAGE_NAME "GSPlus")
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_C_STANDARD 99)
@@ -34,6 +33,11 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
 	)
 endif()
 
+set(LINUX OFF)
+if (CMAKE_SYSTEM MATCHES "Linux")
+	set(LINUX ON)
+endif()
+
 
 
 TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
@@ -44,6 +48,11 @@ endif()
 
 pkg_check_modules(SDL2 sdl2)
 pkg_check_modules(FREETYPE2 freetype2)
+
+
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
 
 #
 # run ccmake, cmake -LH, or cmake -D...
@@ -177,6 +186,14 @@ if (APPLE)
 endif()
 if (TOGGLE_STATUS)
 	target_compile_options(GSPlus PUBLIC -DTOGGLE_STATUS)
+endif()
+
+
+if (HOST_MW)
+	if (LINUX)
+		target_link_libraries(GSPlus -lutil)
+	endif()
+	target_link_libraries(GSPlus Threads::Threads)
 endif()
 
 #if (APPLE AND DRIVER MATCHES "SDL")
