@@ -126,12 +126,23 @@ int
 main(int argc, char **argv)
 {
 
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+
+  sa.sa_flags = SA_RESTART;
+  sa.sa_handlers = siginfo_handler;
+
 	#if defined(SIGINFO)
 	/* control-T by default */
-	signal(SIGINFO, siginfo_handler);
-	#else
-	signal(SIGUSR1, siginfo_handler);
-	#endif
+
+  sigaction(SIGINFO, &sa, NULL);
+  //signal(SIGINFO, siginfo_handler);
+  #endif
+
+	//signal(SIGUSR1, siginfo_handler);
+  sigaction(SIGUSR1, &sa, NULL);
+
+
 	return gsplusmain(argc, argv);
 }
 
