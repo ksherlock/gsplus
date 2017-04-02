@@ -53,6 +53,7 @@ option(DEBUGGER "Enable the debugger" ON)
 option(HOST_FST "Enable host fst support" ON)
 option(HOST_MW "Enable host ModemWorks support" ON)
 option(TOGGLE_STATUS "Enable F10 Toggle Status support (win32/x11)" OFF)
+option(ETHERNET "Enable Ethernet Support" ON)
 
 
 set(generated_headers 8inst_c.h 16inst_c.h 8inst_s.h 16inst_s.h size_c.h size_s.h 8size_s.h 16size_s.h)
@@ -94,8 +95,10 @@ endif()
 add_executable(to_pro to_pro.c)
 add_executable(partls partls.c)
 
-add_subdirectory(atbridge)
-add_subdirectory(tfe)
+if (ETHERNET)
+	add_subdirectory(atbridge)
+	add_subdirectory(tfe)
+endif()
 
 if (DRIVER MATCHES "SDL")
 	set(driver_code sdl2_driver.c sdl2snd_driver.c)
@@ -153,8 +156,10 @@ SET_SOURCE_FILES_PROPERTIES(
   MACOSX_PACKAGE_LOCATION Resources
  )
 
-target_link_libraries(GSPlus atbridge)
-target_link_libraries(GSPlus tfe)
+if (ETHERNET)
+	target_link_libraries(GSPlus atbridge)
+	target_link_libraries(GSPlus tfe)
+endif()
 
 if (DRIVER MATCHES "WIN32")
 	target_link_libraries(GSPlus comdlg32 Shlwapi IPHlpApi
