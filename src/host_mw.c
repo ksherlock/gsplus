@@ -30,6 +30,8 @@
 
 #include "defc.h"
 
+#include "hash/hash.h"
+
 extern Engine_reg engine;
 
 
@@ -247,6 +249,13 @@ static int parse_url(char *s, struct url *url) {
 
 #define BeginWaitLoop 0x0100
 #define EndWaitLoop 0x0101
+
+
+// Hash Tool
+#define HASH_ID 0x6868
+#define HASH_INIT 0
+#define HASH_APPEND 1
+#define HASH_FINISH 2
 
 // &FN fnMode results and &PICKUP selectors
 #define modeAns 	0
@@ -1424,7 +1433,149 @@ static void tt() {
 			}
 			fprintf(stderr, "Unsupported TT system call: %d\n", a);
 		}
-	}}
+	}
+}
+
+
+static int blake2s_64_init(hash_state *md) { return blake2s_init(md, 8); }
+static int blake2s_96_init(hash_state *md) { return blake2s_init(md, 12); }
+
+static const struct ltc_hash_descriptor blake2s_64_desc =
+{
+   "blake2s_64",                  /* name of hash */
+   0,                          /* internal ID */
+   8,                          /* Size of digest in octets */
+   64,                         /* Input block size in octets */
+   { 0 },  /* ASN.1 OID */
+   0,                           /* Length OID */
+   &blake2s_64_init,
+   &blake2s_process,
+   &blake2s_done,
+   NULL,
+   NULL
+};
+
+static const struct ltc_hash_descriptor blake2s_96_desc =
+{
+   "blake2s_96",                  /* name of hash */
+   0,                          /* internal ID */
+   12,                          /* Size of digest in octets */
+   64,                         /* Input block size in octets */
+   { 0 },  /* ASN.1 OID */
+   0,                           /* Length OID */
+   &blake2s_96_init,
+   &blake2s_process,
+   &blake2s_done,
+   NULL,
+   NULL
+};
+
+static void hash() {
+
+	static const struct ltc_hash_descriptor *active_hash = NULL;
+
+	static hash_state md;
+
+	word16 a = engine.acc & 0xff;
+	word16 x = engine.xreg;
+	word16 y = engine.yreg;
+
+	if (a == MSG_USER) {
+		fprintf(stderr, "Hash User Call: %d\n", y);
+
+		switch(y) {
+			case HASH_INIT: {
+				unsigned type = get_memory16_c(prmtbl, 0);
+				active_hash = NULL;
+				memset(&md, 0, sizeof(md));
+
+				switch(type) {
+					case 1:
+						active_hash = &md2_desc;
+						break;
+
+					case 2:
+						active_hash = &md4_desc;
+						break;
+
+					case 3:
+						active_hash = &md5_desc;
+						break;
+
+					case 4:
+						active_hash = &sha1_desc;
+						break;
+
+					case 5:
+						active_hash = &sha3_256_desc;
+						break;
+
+					case 6:
+						active_hash = &blake2s_64_desc;
+						break;
+
+					default:
+						break;
+				}
+				if (active_hash) {
+					int ok = active_hash->init(&md);
+					if (ok == 0) { CLC(); }
+					else { SEC(); }
+				} else {
+					SEC();
+				}
+				break;
+			}
+			case HASH_APPEND: {
+				// prmtbl[2,3] = address
+				// prmtbl[4,5] = size
+				unsigned address = get_memory16_c(prmtbl+0, 0);
+				unsigned size = get_memory16_c(prmtbl+2, 0);
+				if (active_hash && size) {
+					unsigned char *buffer = NULL;
+					buffer = malloc(size);
+					for (unsigned i = 0; i < size; ++i) {
+						buffer[i] = get_memory_c(address + i, 0);
+					}
+					active_hash->process(&md, buffer, size);
+					free(buffer);
+				}
+				break;
+			}
+			case HASH_FINISH: {
+				// prmtbl[2,3] = buffer address
+				// prmtbl[4,5] = size (in/out)
+				unsigned address = get_memory16_c(prmtbl+0, 0);
+				unsigned size = get_memory16_c(prmtbl+2, 0);
+
+				set_memory16_c(prmtbl+2, 0, 0);
+
+				unsigned hsize = active_hash ? active_hash->hashsize : 0;
+
+				// return raw bytes or string?
+				if (active_hash && size * 2 >= hsize ) {
+					unsigned char buffer[128];
+
+					set_memory16_c(prmtbl+2, hsize * 2, 0);
+					static char hex[] = "0123456789abcdef";
+
+					active_hash->done(&md, buffer);
+					for (int i = 0, j = 0; i < hsize; ++i) {
+						unsigned x = buffer[i];
+						set_memory_c(address + j++, hex[x >> 4], 0);
+						set_memory_c(address + j++, hex[x & 0x0f], 0);
+					}
+				}
+				active_hash = NULL;
+				memset(&md, 0, sizeof(md));
+				break;
+			}
+		}
+
+
+	}
+
+}
 
 void host_mw(void) {
 	/*
@@ -1436,6 +1587,7 @@ void host_mw(void) {
 	word16 a = engine.acc & 0xff;
 	word16 x = engine.xreg;
 	word16 y = engine.yreg;
+
 
 
 	/* if there's an active connection, tell everybody else to go away) */
@@ -1452,6 +1604,7 @@ void host_mw(void) {
 		case PT_ID: pt(); break;
 		case MT_ID: mt(); break;
 		case TT_ID: tt(); break;
+		case HASH_ID: hash(); break;
 		default:
 			fprintf(stderr, "Unsupported ModemWorks call: (a=%04x, x=%04x, y=%04x)\n", a, x, y);
 			break;

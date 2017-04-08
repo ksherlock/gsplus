@@ -109,6 +109,8 @@ if (ETHERNET)
 	add_subdirectory(tfe)
 endif()
 
+add_subdirectory(hash)
+
 if (DRIVER MATCHES "SDL")
 	set(driver_code sdl2_driver.c sdl2snd_driver.c)
 elseif(DRIVER MATCHES "X11")
@@ -194,6 +196,7 @@ if (HOST_MW)
 		target_link_libraries(GSPlus -lutil)
 	endif()
 	target_link_libraries(GSPlus Threads::Threads)
+	target_link_libraries(GSPlus hash)
 endif()
 
 #if (APPLE AND DRIVER MATCHES "SDL")
