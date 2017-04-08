@@ -22,14 +22,14 @@ set(CMAKE_C_STANDARD_REQUIRED TRUE)
 
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
 	add_compile_options(
-		-O2 -Wall -fomit-frame-pointer
+		-Wall -fomit-frame-pointer
 	)
 endif()
 
 
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
 	add_compile_options(
-		-O2 -Wall -fomit-frame-pointer
+		-Wall -fomit-frame-pointer
 	)
 endif()
 
