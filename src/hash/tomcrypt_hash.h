@@ -118,9 +118,9 @@ struct blake2s_state {
     ulong32 h[8];
     ulong32 t[2];
     ulong32 f[2];
-    unsigned char buf[2 * 64];
-    ulong32 curlen;
-    unsigned char outlen;
+    unsigned char buf[64];
+    unsigned long curlen;
+    unsigned long outlen;
     unsigned char last_node;
 };
 #endif
@@ -362,7 +362,7 @@ extern const struct ltc_hash_descriptor blake2s_128_desc;
 int blake2s_128_init(hash_state * md);
 int blake2s_128_test(void);
 
-int blake2s_init(hash_state * md, unsigned long outlen);
+int blake2s_init(hash_state * md, unsigned long outlen, const unsigned char *key, unsigned long keylen);
 int blake2s_process(hash_state * md, const unsigned char *in, unsigned long inlen);
 int blake2s_done(hash_state * md, unsigned char *hash);
 #endif
@@ -384,7 +384,7 @@ extern const struct ltc_hash_descriptor blake2b_160_desc;
 int blake2b_160_init(hash_state * md);
 int blake2b_160_test(void);
 
-int blake2b_init(hash_state * md, unsigned long outlen);
+int blake2b_init(hash_state * md, unsigned long outlen, const unsigned char *key, unsigned long keylen);
 int blake2b_process(hash_state * md, const unsigned char *in, unsigned long inlen);
 int blake2b_done(hash_state * md, unsigned char *hash);
 #endif

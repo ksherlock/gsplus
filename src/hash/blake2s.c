@@ -32,21 +32,40 @@ enum blake2s_constant {
    BLAKE2S_OUTBYTES = 32,
    BLAKE2S_KEYBYTES = 32,
    BLAKE2S_SALTBYTES = 8,
-   BLAKE2S_PERSONALBYTES = 8
+   BLAKE2S_PERSONALBYTES = 8,
+   BLAKE2S_PARAM_SIZE = 32
 };
 
+/* param offsets */
+enum {
+   O_DIGEST_LENGTH = 0,
+   O_KEY_LENGTH = 1,
+   O_FANOUT = 2,
+   O_DEPTH = 3,
+   O_LEAF_LENGTH = 4,
+   O_NODE_OFFSET = 8,
+   O_XOF_LENGTH = 12,
+   O_NODE_DEPTH = 14,
+   O_INNER_LENGTH = 15,
+   O_SALT = 16,
+   O_PERSONAL = 24
+};
+
+/*
 struct blake2s_param {
    unsigned char digest_length;
    unsigned char key_length;
    unsigned char fanout;
    unsigned char depth;
    ulong32 leaf_length;
-   unsigned char node_offset[6];
+   ulong32 node_offset;
+   ushort16 xof_length;
    unsigned char node_depth;
    unsigned char inner_length;
    unsigned char salt[BLAKE2S_SALTBYTES];
    unsigned char personal[BLAKE2S_PERSONALBYTES];
 };
+*/
 
 const struct ltc_hash_descriptor blake2s_128_desc =
 {
@@ -126,79 +145,98 @@ static const unsigned char blake2s_sigma[10][16] = {
     { 10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0 },
 };
 
-static inline void blake2s_set_lastnode(hash_state *md)
-{
-   md->blake2s.f[1] = ~0U;
-}
+static void blake2s_set_lastnode(hash_state *md) { md->blake2s.f[1] = 0xffffffffUL; }
 
 /* Some helper functions, not necessarily useful */
-static inline void blake2s_set_lastblock(hash_state *md)
+static int blake2s_is_lastblock(const hash_state *md) { return md->blake2s.f[0] != 0; }
+
+static void blake2s_set_lastblock(hash_state *md)
 {
    if (md->blake2s.last_node)
       blake2s_set_lastnode(md);
 
-   md->blake2s.f[0] = ~0U;
+   md->blake2s.f[0] = 0xffffffffUL;
 }
 
-static inline void blake2s_increment_counter(hash_state *md, const ulong32 inc)
+static void blake2s_increment_counter(hash_state *md, const ulong32 inc)
 {
    md->blake2s.t[0] += inc;
    md->blake2s.t[1] += (md->blake2s.t[0] < inc);
 }
 
-static inline int blake2s_init0(hash_state *md)
+static int blake2s_init0(hash_state *md)
 {
+   int i;
    XMEMSET(&md->blake2s, 0, sizeof(struct blake2s_state));
 
-   for (int i = 0; i < 8; ++i)
+   for (i = 0; i < 8; ++i)
       md->blake2s.h[i] = blake2s_IV[i];
 
    return CRYPT_OK;
 }
 
 /* init2 xors IV with input parameter block */
-static int blake2s_init_param(hash_state *md, const struct blake2s_param *P)
+static int blake2s_init_param(hash_state *md, const unsigned char *P)
 {
+   unsigned long i;
+
    blake2s_init0(md);
-   ulong32 *p = (ulong32 *)(P);
 
    /* IV XOR ParamBlock */
-   for (unsigned long i = 0; i < 8; ++i) {
+   for (i = 0; i < 8; ++i) {
       ulong32 tmp;
-      LOAD32L(tmp, &p[i]);
+      LOAD32L(tmp, P + i * 4);
       md->blake2s.h[i] ^= tmp;
    }
 
-   md->blake2s.outlen = P->digest_length;
+   md->blake2s.outlen = P[O_DIGEST_LENGTH];
    return CRYPT_OK;
 }
 
-/* Sequential blake2s initialization */
-int blake2s_init(hash_state *md, unsigned long outlen)
+int blake2s_init(hash_state *md, unsigned long outlen, const unsigned char *key, unsigned long keylen)
 {
-   struct blake2s_param P;
+   unsigned char P[BLAKE2S_PARAM_SIZE];
+   int err;
+
    LTC_ARGCHK(md != NULL);
 
    if ((!outlen) || (outlen > BLAKE2S_OUTBYTES))
       return CRYPT_INVALID_ARG;
 
-   XMEMSET(&P, 0, sizeof(P));
+   if ((key && !keylen) || (keylen && !key) || (keylen > BLAKE2S_KEYBYTES))
+      return CRYPT_INVALID_ARG;
 
-   P.digest_length = (unsigned char)outlen;
+   XMEMSET(P, 0, sizeof(P));
 
-   P.fanout = 1;
-   P.depth = 1;
+   P[O_DIGEST_LENGTH] = (unsigned char)outlen;
+   P[O_KEY_LENGTH] = (unsigned char)keylen;
+   P[O_FANOUT] = 1;
+   P[O_DEPTH] = 1;
 
-   return blake2s_init_param(md, &P);
+   err = blake2s_init_param(md, P);
+   if (err != CRYPT_OK) return err;
+
+   if (key) {
+      unsigned char block[BLAKE2S_BLOCKBYTES];
+
+      XMEMSET(block, 0, BLAKE2S_BLOCKBYTES);
+      XMEMCPY(block, key, keylen);
+      blake2s_process(md, block, BLAKE2S_BLOCKBYTES);
+
+#ifdef LTC_CLEAN_STACK
+      zeromem(block, sizeof(block));
+#endif
+   }
+   return CRYPT_OK;
 }
 
-int blake2s_128_init(hash_state *md) { return blake2s_init(md, 16); }
+int blake2s_128_init(hash_state *md) { return blake2s_init(md, 16, NULL, 0); }
 
-int blake2s_160_init(hash_state *md) { return blake2s_init(md, 20); }
+int blake2s_160_init(hash_state *md) { return blake2s_init(md, 20, NULL, 0); }
 
-int blake2s_224_init(hash_state *md) { return blake2s_init(md, 28); }
+int blake2s_224_init(hash_state *md) { return blake2s_init(md, 28, NULL, 0); }
 
-int blake2s_256_init(hash_state *md) { return blake2s_init(md, 32); }
+int blake2s_256_init(hash_state *md) { return blake2s_init(md, 32, NULL, 0); }
 
 #define G(r, i, a, b, c, d)                                                                                            \
    do {                                                                                                                \
@@ -224,19 +262,20 @@ int blake2s_256_init(hash_state *md) { return blake2s_init(md, 32); }
    } while (0)
 
 #ifdef LTC_CLEAN_STACK
-static int _blake2s_compress(hash_state *md, unsigned char *buf)
+static int _blake2s_compress(hash_state *md, const unsigned char *buf)
 #else
-static int blake2s_compress(hash_state *md, unsigned char *buf)
+static int blake2s_compress(hash_state *md, const unsigned char *buf)
 #endif
 {
+   unsigned long i;
    ulong32 m[16];
    ulong32 v[16];
 
-   for (unsigned long i = 0; i < 16; ++i) {
+   for (i = 0; i < 16; ++i) {
       LOAD32L(m[i], buf + i * sizeof(m[i]));
    }
 
-   for (unsigned long i = 0; i < 8; ++i)
+   for (i = 0; i < 8; ++i)
       v[i] = md->blake2s.h[i];
 
    v[8] = blake2s_IV[0];
@@ -259,7 +298,7 @@ static int blake2s_compress(hash_state *md, unsigned char *buf)
    ROUND(8);
    ROUND(9);
 
-   for (unsigned long i = 0; i < 8; ++i)
+   for (i = 0; i < 8; ++i)
       md->blake2s.h[i] = md->blake2s.h[i] ^ v[i] ^ v[i + 8];
 
    return CRYPT_OK;
@@ -268,11 +307,11 @@ static int blake2s_compress(hash_state *md, unsigned char *buf)
 #undef ROUND
 
 #ifdef LTC_CLEAN_STACK
-static int blake2s_compress(hash_state *md, unsigned char *buf)
+static int blake2s_compress(hash_state *md, const unsigned char *buf)
 {
    int err;
    err = _blake2s_compress(md, buf);
-   burn_stack(sizeof(ulong32) * 32);
+   burn_stack(sizeof(ulong32) * (32) + sizeof(unsigned long));
    return err;
 }
 #endif
@@ -286,34 +325,32 @@ int blake2s_process(hash_state *md, const unsigned char *in, unsigned long inlen
       return CRYPT_INVALID_ARG;
    }
 
-   while (inlen > 0) {
-      ulong32 left = md->blake2s.curlen;
-      ulong32 fill = 2 * BLAKE2S_BLOCKBYTES - left;
-
+   if (inlen > 0) {
+      unsigned long left = md->blake2s.curlen;
+      unsigned long fill = BLAKE2S_BLOCKBYTES - left;
       if (inlen > fill) {
-         XMEMCPY(md->blake2s.buf + left, in, fill);
-         md->blake2s.curlen += fill;
+         md->blake2s.curlen = 0;
+         XMEMCPY(md->blake2s.buf + left, in, fill); /* Fill buffer */
          blake2s_increment_counter(md, BLAKE2S_BLOCKBYTES);
-         blake2s_compress(md, md->blake2s.buf);
-         XMEMCPY(md->blake2s.buf, md->blake2s.buf + BLAKE2S_BLOCKBYTES, BLAKE2S_BLOCKBYTES);
-         md->blake2s.curlen -= BLAKE2S_BLOCKBYTES;
+         blake2s_compress(md, md->blake2s.buf); /* Compress */
          in += fill;
          inlen -= fill;
-      } else /* inlen <= fill */
-      {
-         XMEMCPY(md->blake2s.buf + left, in, inlen);
-         md->blake2s.curlen += (ulong32)inlen; /* Be lazy, do not compress */
-         in += inlen;
-         inlen -= inlen;
+         while (inlen > BLAKE2S_BLOCKBYTES) {
+            blake2s_increment_counter(md, BLAKE2S_BLOCKBYTES);
+            blake2s_compress(md, in);
+            in += BLAKE2S_BLOCKBYTES;
+            inlen -= BLAKE2S_BLOCKBYTES;
+         }
       }
+      XMEMCPY(md->blake2s.buf + md->blake2s.curlen, in, inlen);
+      md->blake2s.curlen += inlen;
    }
-
    return CRYPT_OK;
 }
 
 int blake2s_done(hash_state *md, unsigned char *out)
 {
-   unsigned char buffer[BLAKE2S_OUTBYTES];
+   unsigned char buffer[BLAKE2S_OUTBYTES] = { 0 };
    unsigned long i;
 
    LTC_ARGCHK(md != NULL);
@@ -321,24 +358,21 @@ int blake2s_done(hash_state *md, unsigned char *out)
 
    /* if(md->blake2s.outlen != outlen) return CRYPT_INVALID_ARG; */
 
-   if (md->blake2s.curlen > BLAKE2S_BLOCKBYTES) {
-      blake2s_increment_counter(md, BLAKE2S_BLOCKBYTES);
-      blake2s_compress(md, md->blake2s.buf);
-      md->blake2s.curlen -= BLAKE2S_BLOCKBYTES;
-      XMEMCPY(md->blake2s.buf, md->blake2s.buf + BLAKE2S_BLOCKBYTES, md->blake2s.curlen);
-   }
+   if (blake2s_is_lastblock(md))
+      return CRYPT_ERROR;
 
-   blake2s_increment_counter(md, (ulong32)md->blake2s.curlen);
+   blake2s_increment_counter(md, md->blake2s.curlen);
    blake2s_set_lastblock(md);
-   XMEMSET(md->blake2s.buf + md->blake2s.curlen, 0, 2 * BLAKE2S_BLOCKBYTES - md->blake2s.curlen); /* Padding */
+   XMEMSET(md->blake2s.buf + md->blake2s.curlen, 0, BLAKE2S_BLOCKBYTES - md->blake2s.curlen); /* Padding */
    blake2s_compress(md, md->blake2s.buf);
 
    for (i = 0; i < 8; ++i) /* Output full hash to temp buffer */
-      STORE32L(md->blake2s.h[i], buffer + sizeof(md->blake2s.h[i]) * i);
+      STORE32L(md->blake2s.h[i], buffer + i * 4);
 
    XMEMCPY(out, buffer, md->blake2s.outlen);
 #ifdef LTC_CLEAN_STACK
-    zeromem(md, sizeof(hash_state));
+   zeromem(buffer, sizeof(buffer));
+   zeromem(md, sizeof(hash_state));
 #endif
    return CRYPT_OK;
 }
@@ -378,9 +412,9 @@ int blake2s_256_test(void)
       blake2s_256_init(&md);
       blake2s_process(&md, (unsigned char *)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       blake2s_done(&md, tmp);
-      if (XMEMCMP(tmp, tests[i].hash, 32) != 0) {
+      if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "BLAKE2S_256", i))
          return CRYPT_FAIL_TESTVECTOR;
-      }
+
    }
    return CRYPT_OK;
 #endif
@@ -421,9 +455,9 @@ int blake2s_224_test(void)
       blake2s_224_init(&md);
       blake2s_process(&md, (unsigned char *)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       blake2s_done(&md, tmp);
-      if (XMEMCMP(tmp, tests[i].hash, 28) != 0) {
+      if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "BLAKE2S_224", i))
          return CRYPT_FAIL_TESTVECTOR;
-      }
+
    }
    return CRYPT_OK;
 #endif
@@ -462,9 +496,9 @@ int blake2s_160_test(void)
       blake2s_160_init(&md);
       blake2s_process(&md, (unsigned char *)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       blake2s_done(&md, tmp);
-      if (XMEMCMP(tmp, tests[i].hash, 20) != 0) {
+      if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "BLAKE2S_160", i))
          return CRYPT_FAIL_TESTVECTOR;
-      }
+
    }
    return CRYPT_OK;
 #endif
@@ -501,9 +535,8 @@ int blake2s_128_test(void)
       blake2s_128_init(&md);
       blake2s_process(&md, (unsigned char *)tests[i].msg, (unsigned long)strlen(tests[i].msg));
       blake2s_done(&md, tmp);
-      if (XMEMCMP(tmp, tests[i].hash, 16) != 0) {
+      if (compare_testvector(tmp, sizeof(tmp), tests[i].hash, sizeof(tests[i].hash), "BLAKE2S_128", i))
          return CRYPT_FAIL_TESTVECTOR;
-      }
    }
    return CRYPT_OK;
 #endif

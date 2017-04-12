@@ -1437,8 +1437,8 @@ static void tt() {
 }
 
 
-static int blake2s_64_init(hash_state *md) { return blake2s_init(md, 8); }
-static int blake2s_96_init(hash_state *md) { return blake2s_init(md, 12); }
+static int blake2s_64_init(hash_state *md) { return blake2s_init(md, 8, NULL, 0); }
+static int blake2s_96_init(hash_state *md) { return blake2s_init(md, 12, NULL, 0); }
 
 static const struct ltc_hash_descriptor blake2s_64_desc =
 {
