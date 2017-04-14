@@ -1519,9 +1519,10 @@ static void hash() {
 				}
 				if (active_hash) {
 					int ok = active_hash->init(&md);
-					if (ok == 0) { CLC(); }
-					else { SEC(); }
+					if (ok == CRYPT_OK) { engine.acc = 0; CLC(); }
+					else { engine.acc = 2; SEC(); }
 				} else {
+					engine.acc = 1;
 					SEC();
 				}
 				break;
