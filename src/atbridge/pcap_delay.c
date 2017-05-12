@@ -25,7 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifdef WIN32
 #include <Windows.h>
 static HMODULE module = NULL;
-#elif __linux__
+#else
 #include <dlfcn.h>
 static void* module = 0;
 #endif
@@ -37,7 +37,9 @@ bool pcapdelay_load()
 	{
 #ifdef WIN32
 		module = LoadLibrary("wpcap.dll");
-#elif __linux__
+#elif defined(__APPLE__) && defined(__MACH__)
+		module = dlopen("/usr/lib/libpcap.dylib", RTLD_LAZY);
+#else
 		module = dlopen("libpcap.so", RTLD_LAZY);
 #endif
 	}
@@ -48,7 +50,7 @@ bool pcapdelay_is_loaded()
 {
 #ifdef WIN32
 	return module != NULL;
-#elif __linux__
+#else
 	return module != 0;
 #endif
   return 0;
@@ -61,7 +63,7 @@ void pcapdelay_unload()
 #ifdef WIN32
 		FreeLibrary(module);
 		module = NULL;
-#elif __linux__
+#else
 		dlclose(module);
 		module = 0;
 #endif
@@ -76,7 +78,7 @@ static PFNVOID delay_load(const char* proc, PFNVOID* ppfn)
 	{
 #ifdef WIN32
 		*ppfn = (PFNVOID)GetProcAddress(module, proc);
-#elif __linux__
+#else
 		*ppfn = (PFNVOID)dlsym(module, proc);
 #endif
 	}
