@@ -8,6 +8,7 @@ This particular branch (modemworks) was designed to run a ProLine BBS headless.
 
 Headless kegs with ModemWorks support has been known to build on Linux and OS X.
 
+    git checkout modemworks
     mkdir build
     cd build
     cmake -DHOST_MW=ON -DDRIVER=HEADLESS ../src/
