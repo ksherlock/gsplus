@@ -18,3 +18,5 @@ Headless kegs with ModemWorks support has been known to build on Linux and OS X.
 Set up your disk images and config with a normal version of GSPlus. 
 
 You can send a SIGINFO (OS X - `control-T`) or SIGUSR1 (`killall -SIGUSR1 GSPlus`) to dump the text screen.
+
+See also, [Host ModemWorks](https://github.com/ksherlock/host-modemworks) for the corresponding ProLine Serial/Modem/Time/Hash tools.
