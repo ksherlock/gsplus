@@ -1,22 +1,23 @@
-# GSplus
-An Apple IIgs emulator for Mac OSX, Windows, and Linux.
+# Headless GSPlus
 
-![Screenshot of starting the program](doc/web/Screenshot.png "Screenshot of starting the program")
+This is a branch of [GSPlus](https://github.com/digarok/gsplus) which is a fork of GSport which is a fork of a fork of KEGS.
 
-# About
-This is an early release of an experimental project to modernize the
-KEGS/GSport emulator platform and eventually extend it.
+This particular branch (modemworks) was designed to run a ProLine BBS headless.
 
-# Install
-Go to https://apple2.gs/plus to get the latest downloads for your system.
+## Building
 
-# Usage Notes
-You need to provide the ROM file and disk images and a config file.  I'd
-recommend you just drop it in your current GSport or KEGS folder and run it
-from there.
+Headless kegs with ModemWorks support has been known to build on Linux and OS X.
 
-See the doc/gsplusmanual.pdf file for much more complete documentation.
+    git checkout modemworks
+    mkdir build
+    cd build
+    cmake -DHOST_MW=ON -DDRIVER=HEADLESS ../src/
+    make
 
-# Build Instructions
-See the /doc/ directory for "Developer-Quickstart" docs which cover building
-for the various platforms.  
+## Using
+
+Set up your disk images and config with a normal version of GSPlus. 
+
+You can send a SIGINFO (OS X - `control-T`) or SIGUSR1 (`killall -SIGUSR1 GSPlus`) to dump the text screen.
+
+See also, [Host ModemWorks](https://github.com/ksherlock/host-modemworks) for the corresponding ProLine Serial/Modem/Time/Hash tools.
