@@ -74,6 +74,12 @@ enum {
 	directory_file,
 };
 
+enum {
+	translate_none,
+	translate_crlf,
+	translate_merlin,
+};
+
 
 struct directory {
 	int displacement;
@@ -88,6 +94,7 @@ struct fd_entry {
 	int type;
 	int access;
 	int fd;
+	int translate;
 	struct directory *dir;
 };
 
@@ -137,7 +144,8 @@ static int read_only = 0;
 
 char *g_cfg_host_path = ""; // must not be null.
 int g_cfg_host_read_only = 0;
-
+int g_cfg_host_crlf = 1;
+int g_cfg_host_merlin = 0;
 
 /*
  * simple malloc pool to simplify code.  Should never need > 4 allocations.
@@ -296,16 +304,71 @@ static word32 remove_fd(int cookie) {
 	return rv;
 }
 
-static ssize_t safe_read(int fd, void *buffer, size_t count) {
+static void cr_to_lf(byte *buffer, size_t size) {
+	size_t i;
+	for (i = 0; i < size; ++i) {
+		if (buffer[i] == '\r') buffer[i] = '\n';
+	}
+}
+
+static void lf_to_cr(byte *buffer, size_t size) {
+	size_t i;
+	for (i = 0; i < size; ++i) {
+		if (buffer[i] == '\n') buffer[i] = '\r';
+	}
+}
+
+
+static ssize_t safe_read(struct fd_entry *e, byte *buffer, size_t count) {
+	int fd = e->fd;
+	int tr = e->translate;
+
 	for (;;) {
 		ssize_t ok = read(fd, buffer, count);
-		if (ok >= 0) return ok;
+		if (ok >= 0) {
+			size_t i;
+			if (tr == translate_crlf) {
+				for (i = 0; i < ok; ++i) {
+					if (buffer[i] == '\n') buffer[i] = '\r';
+				}
+			}
+			if (tr == translate_merlin) {
+				for (i = 0; i < ok; ++i) {
+					unsigned char c = buffer[i];
+					if (c == '\t') c = 0xa0;
+					if (c == '\n') c = '\r';
+					if (c != ' ') c |= 0x80;
+					buffer[i] = c;
+				}
+			}
+			return ok;
+		}
 		if (ok < 0 && errno == EINTR) continue;
 		return ok;
 	}
 }
 
-static ssize_t safe_write(int fd, const void *buffer, size_t count) {
+static ssize_t safe_write(struct fd_entry *e, byte *buffer, size_t count) {
+	int fd = e->fd;
+	int tr = e->translate;
+
+	if (tr == translate_crlf) {
+		size_t i;
+		for (i = 0; i < count; ++i) {
+			if (buffer[i] == '\r') buffer[i] = '\n';
+		}
+	}
+	if (tr == translate_merlin) {
+		size_t i;
+		for (i = 0; i < count; ++i) {
+			unsigned char c = buffer[i];
+			if (c == 0xa0) c = '\t';
+			c &= 0x7f;
+			if (c == '\r') c = '\n';
+			buffer[i] = c;
+		}
+	}
+
 	for (;;) {
 		ssize_t ok = write(fd, buffer, count);
 		if (ok >= 0) return ok;
@@ -517,6 +580,37 @@ static void get_file_xinfo(const char *path, struct file_info *fi) {
 }
 #endif
 
+#undef _
+#define _(a, b, c) { a, sizeof(a) - 1, b, c }
+struct ftype_entry {
+	char *ext;
+	unsigned length;
+	unsigned file_type;
+	unsigned aux_type;
+};
+
+static struct ftype_entry suffixes[] = {
+	_("c",    0xb0, 0x0008),
+	_("cc",   0xb0, 0x0008),
+	_("h",    0xb0, 0x0008),
+	_("rez",  0xb0, 0x0015),
+	_("asm",  0xb0, 0x0003),
+	_("mac",  0xb0, 0x0003),
+	_("pas",  0xb0, 0x0005),
+	_("txt",  0x04, 0x0000),
+	_("text", 0x04, 0x0000),
+	_("s",    0x04, 0x0000),
+	{ 0, 0, 0, 0}
+};
+
+static struct ftype_entry prefixes[] = {
+	_("m16.",  0xb0, 0x0003),
+	_("e16.",  0xb0, 0x0003),
+	{ 0, 0, 0, 0}
+};
+
+#undef _
+
 static word32 get_file_info(const char *path, struct file_info *fi) {
 	struct stat st;
 	memset(fi, 0, sizeof(*fi));
@@ -564,6 +658,31 @@ static word32 get_file_info(const char *path, struct file_info *fi) {
 
 	if (S_ISREG(st.st_mode)) {
 		get_file_xinfo(path, fi);
+
+		if (!fi->has_fi) {
+			/* guess the file type / auxtype based on extension */
+			int n;
+			const char *dot = NULL;
+			const char *slash = NULL;
+
+			for(n = 0; ; ++n) {
+				char c = path[n];
+				if (c == 0) break;
+				else if (c == '/') { slash = path + n + 1; dot = NULL; }
+				else if (c == '.') dot = path + n + 1;
+			}
+
+			if (dot && *dot) {
+				for (n = 0; n < sizeof(suffixes) / sizeof(suffixes[0]); ++n) {
+					if (!suffixes[n].ext) break;
+					if (!strcasecmp(dot, suffixes[n].ext)) {
+						fi->file_type = suffixes[n].file_type;
+						fi->aux_type = suffixes[n].aux_type;
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	// get file type/aux type
@@ -1551,6 +1670,20 @@ static word32 fst_open(int class, const char *path) {
 		return tooManyFilesOpen;
 	}
 
+	if (type == regular_file){
+
+		if (g_cfg_host_crlf) {
+			if (fi.file_type == 0x04 || fi.file_type == 0xb0)
+				e->translate = translate_crlf;
+		}
+
+		if (g_cfg_host_merlin && fi.file_type == 0x04) {
+			int n = strlen(path);
+			if (n >= 3 && path[n-1] == 'S' && path[n-2] == '.')
+				e->translate = translate_merlin;
+		}
+	}
+
 	e->access = access;
 	e->path = strdup(path);
 	e->type = type;
@@ -1610,7 +1743,7 @@ static word32 fst_read(int class) {
 
 		for (word32 i = 0 ; i < request_count; ++i) {
 			byte b;
-			ok = safe_read(e->fd, &b, 1);
+			ok = safe_read(e, &b, 1);
 			if (ok < 0) return map_errno();
 			if (ok == 0) break;
 			transfer_count++;
@@ -1623,7 +1756,8 @@ static word32 fst_read(int class) {
 		byte *data = gc_malloc(request_count);
 		if (!data) return outOfMem;
 
-		ok = safe_read(e->fd, data, request_count);
+
+		ok = safe_read(e, data, request_count);
 		if (ok < 0) rv = map_errno();
 		if (ok == 0) rv = eofEncountered;
 		if (ok > 0) {
@@ -1685,7 +1819,7 @@ static word32 fst_write(int class) {
 	}
 
 	word32 rv = 0;
-	ssize_t ok = safe_write(e->fd, data, request_count);
+	ssize_t ok = safe_write(e, data, request_count);
 	if (ok < 0) rv = map_errno();
 	if (ok > 0) {
 		if (class)
@@ -2026,6 +2160,7 @@ static word32 fst_get_dir_entry(int class) {
 	struct 	file_info fi;
 	rv = get_file_info(fullpath, &fi);
 
+	if (dname) fprintf(stderr, " - %s", dname);
 
 
 	// p16 and gs/os both use truncating c1 output string.
@@ -2453,7 +2588,6 @@ void host_fst(void) {
 
 		if (path1) fprintf(stderr, " - %s", path1);
 		if (path2) fprintf(stderr, " - %s", path2);
-		fputs("\n", stderr);
 
 		switch(call & 0xff) {
 			case 0x01:
@@ -2551,6 +2685,7 @@ void host_fst(void) {
 				acc = invalidFSTop;
 				break;
 		}
+		fputs("\n", stderr);
 
 
 	}
