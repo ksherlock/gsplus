@@ -137,7 +137,7 @@ set(MACOSX_BUNDLE_COPYRIGHT "Copyright 2016 Dagen Brock")
 set(MACOSX_BUNDLE_LONG_VERSION_STRING "0.12s")
 set(MACOSX_BUNDLE_SHORT_VERSION_STRING "0.12s")
 set(MACOSX_BUNDLE_BUNDLE_VERSION "0.12s")
-set(MACOSX_BUNDLE_ICON_FILE gsp-icons.icns)
+set(MACOSX_BUNDLE_ICON_FILE gsp_icon.icns)
 set(MACOSX_BUNDLE_GUI_IDENTIFIER com.dagenbrock.gsplus)
 
 # https://cmake.org/Wiki/CMake:Bundles_And_Frameworks
