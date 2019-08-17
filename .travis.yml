@@ -14,6 +14,7 @@ addons:
     - libsdl2-image-dev
     - libfreetype6-dev
   homebrew:
+    update: true
     packages:
     - re2c
     - sdl2
