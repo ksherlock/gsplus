@@ -52,6 +52,7 @@ extern word32 debug_apply_template(word32 address, const char *name);
 extern void debug_load_nifty(const char *path);
 extern const char *debug_tool_name(unsigned number, unsigned vector, unsigned full);
 
+static const char *get_inline_debug_name(word32 address);
 
 
 #if defined(__APPLE__)
@@ -150,10 +151,28 @@ void clear_prev_line(void) {
  * - gs/os break support
  * - p8 break support
  * - r -> run to next rts/rtl
- * - ! -> mini assembler
  */
 
+#if 0
+static char *find_user_id_name(unsigned id) {
 
+	enum {
+		oUserHandle = 0x0078, /* from gs/os direct page */
+		OSKind = 0xe100bc
+	};
+
+	word32 handle;
+	word32 ptr;
+
+	if (get_memory_c(OSKind, 0) != 1) return NULL;
+
+	handle = get_memory32_c(0x00bf78, 0);
+	if (handle == 0 || handle > 0xffffff) return NULL;
+	ptr = get_memory32_c(ptr, 0);
+	if (ptr == 0 || ptr > 0xffffff) return NULL;
+
+}
+#endif
 
 static void do_handle(word32 value, int action) {
 	/* action = I)nfo, W)who, H)handle */
@@ -322,44 +341,83 @@ word32 do_hexdump(word32 address, int lines) {
 	return address;
 }
 
-static int check_stack_rts(word32 address, unsigned bank, char *buffer) {
+static const char *check_stack_rts(word32 address, unsigned bank, char *buffer, int *n) {
 	word32 rt;
 	unsigned op;
+	const char *comment = NULL;
 
+	*n = 0;
 	rt = get_memory24_c(address, 0);
-	if (rt == 0) return 0;
+	if (rt == 0) return NULL;
 
 	rt = (rt & 0xff0000) | ((rt - 3) & 0xffff);
 	op = get_memory_c(rt, 0);
 	if (op == 0x22) {
-		word32 tmp = get_memory24_c(rt + 1, 0); /* crosses bank :/ */
-		/* todo -- check if tmp is known address, include below */
-		/* todo -- if jsl e10000, check for prev. ldx # */
+		word32 x;
+		word32 ea = get_memory24_c(rt + 1, 0); /* crosses bank :/ */
+
 		sprintf(buffer, "%02x/%04x: JSL %06x",
-			rt >> 16, rt & 0xffff, tmp);
-		return 3;
+			rt >> 16, rt & 0xffff, ea);
+
+		if (ea == 0xe10000 || ea == 0xe10008) {
+			if ((rt & 0xffff) >= 3 && get_memory_c(rt - 3, 0) == 0xa2) {
+				x = get_memory16_c(rt - 2, 0);
+				comment = debug_tool_name(x, 0xe10000, 1);
+			}
+		}
+		if (ea == 0xe100a8) {
+			/* inline gs/os call */
+			x = get_memory16_c(rt + 4, 0);
+			comment = debug_tool_name(x, 0xe100a8, 0);
+		}
+		if (ea == 0xe100b0) {
+			/* stack-based gs/os call */
+			if ((rt & 0xffff) >= 3 && get_memory_c(rt - 3, 0) == 0xf4) {
+				x = get_memory16_c(rt - 2, 0);
+				comment = debug_tool_name(x, 0xe100a8, 0);
+			}
+		}
+		if (!comment)
+			comment = debug_tool_name(ea & 0xffff, ea >> 16, 1);
+
+		if (!comment)
+			comment = get_inline_debug_name(ea);
+
+		*n = 3;
+		return comment ? comment : "";
 	}
+	/* todo -- check $dc jmp [xxxx]? */
+
 	/* sigh... this might re-check 0000 a lot */
 	rt = get_memory16_c(address, 0);
 	rt = bank | ((rt - 2) & 0xffff);
 
 	op = get_memory_c(rt, 0);
 	if (op == 0x20 || op == 0xfc) {
-		word32 tmp = get_memory16_c(rt + 1, 0);
+		word32 ea = get_memory16_c(rt + 1, 0);
 		if (op == 0x20) {
 			sprintf(buffer, "%02x/%04x: JSR %04x",
-				rt >> 16, rt & 0xffff, tmp);
+				rt >> 16, rt & 0xffff, ea);
+			ea = ea | (rt & 0xff0000);
+
+			/* todo -- jsr bf00 -> prodos mli */
+			if (!comment)
+				comment = debug_tool_name(ea & 0xffff, ea >> 16, 1);
+
+			if (!comment)
+				comment = get_inline_debug_name(ea);
+
 		}
 		if (op == 0xfc) {
 			sprintf(buffer, "%02x/%04x: JSR (%04x,x)",
-				rt >> 16, rt & 0xffff, tmp);	
+				rt >> 16, rt & 0xffff, ea);	
 		}
 
-		return 2;
+		*n = 2;
+		return comment ? comment : "";
 	}
 
-
-	return 0;
+	return NULL;
 }
 
 word32 do_stack(word32 address, unsigned bank) {
@@ -391,8 +449,10 @@ word32 do_stack(word32 address, unsigned bank) {
 
 	while(line < 20) {
 		unsigned c;
-		int tmp = check_stack_rts(address + offset, bank, buffer2);
-		if (tmp) {
+		int n = 0;
+		const char *comment;
+		comment = check_stack_rts(address + offset, bank, buffer2, &n);
+		if (comment) {
 			/* flush any pending data */
 
 			if (offset) {
@@ -405,7 +465,7 @@ word32 do_stack(word32 address, unsigned bank) {
 				cp = buffer1;
 			}
 
-			for (offset = 0; offset < tmp; ++offset) {
+			for (offset = 0; offset < n; ++offset) {
 				c = get_memory_c(address + offset, 0);
 				*cp++ = hex[c >> 4];
 				*cp++ = hex[c & 0x0f];
@@ -413,12 +473,20 @@ word32 do_stack(word32 address, unsigned bank) {
 			}
 
 			*cp = 0;
-			printf("%02x/%04x: %-12s%s\n",
+			n = printf("%02x/%04x: %-22s%s",
 				address >> 16, address & 0xffff, buffer1, buffer2);
+
+			if (comment && *comment) {
+				for(;n < 65; ++n) fputc(' ', stdout);
+				printf("; %s", comment);
+			}
+			fputc('\n', stdout);
+
 			++line;
 			address += offset;
 			offset = 0;
 			cp = buffer1;
+
 			continue;
 		}
 
@@ -729,6 +797,16 @@ word32 do_list(word32 address, int lines) {
 						for (i = 0; i < 6; ++i) {
 							buffer2[bsize++] = get_memory_c(address++, 0);
 						}
+					}
+				}
+				if (operand == 0xe100b0) {
+					/* stack-based GS/OS call? */
+					/* ph4 block, ph2 num, jsl e100b0 */
+					if (get_memory_c(address - 7, 0) == 0xf4) {
+						unsigned num = get_memory16_c(address - 6, 0);
+						const char *name;
+						name = debug_tool_name(num, 0xe100a8, 0);
+						if (name) comment = name;
 					}
 				}
 				break;
