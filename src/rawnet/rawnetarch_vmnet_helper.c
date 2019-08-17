@@ -179,8 +179,7 @@ int rawnet_arch_activate(const char *interface_name) {
 
 
 	int ok;
-	posix_spawn_file_actions_t actions;
-	posix_spawnattr_t attr;
+
 	char *argv[] = { "vmnet_helper", NULL };
 	char *path = NULL;
 
@@ -201,6 +200,10 @@ int rawnet_arch_activate(const char *interface_name) {
 
 	block_pipe(&oldaction);
 
+#ifdef USE_POSIX_SPAWN
+	posix_spawn_file_actions_t actions;
+	posix_spawnattr_t attr;
+
 	posix_spawn_file_actions_init(&actions);
 	posix_spawnattr_init(&attr);
 
@@ -220,7 +223,30 @@ int rawnet_arch_activate(const char *interface_name) {
 	free(path);
 	posix_spawn_file_actions_destroy(&actions);
 	posix_spawnattr_destroy(&attr);
+#else
+	extern char **environ;
+	/* need to setsid() on the child */
+	path = get_relative_path("vmnet_helper");
 
+	interface_pid = fork();
+	if (interface_pid < 0) ok = 0;
+	if (interface_pid == 0) {
+
+		dup2(pipe_stdin[0], STDIN_FILENO);
+		dup2(pipe_stdout[1], STDOUT_FILENO);
+
+		close(pipe_stdin[0]);
+		close(pipe_stdin[1]);
+		close(pipe_stdout[0]);
+		close(pipe_stdout[1]);
+
+		setsid();
+		execve(path, argv, environ);
+		write(STDERR_FILENO, "execve failed\n", 14);
+		_exit(1);
+	}
+	free(path);
+#endif
 	close(pipe_stdin[0]);
 	close(pipe_stdout[1]);
 	/* posix spawn returns 0 on success, error code on failure. */
