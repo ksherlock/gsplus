@@ -475,7 +475,6 @@ word32 tool_lookup(unsigned tool) {
 	/* if ix == 0, list all tool calls in the set */
 	/* otherwise, just the specific tool call */
 
-	/* todo -- also lookup tool name */
 	word32 addr = 0;
 	const char *cp;
 	if (ix) {
@@ -484,7 +483,7 @@ word32 tool_lookup(unsigned tool) {
 		if (addr) ++addr;
 		cp = debug_tool_name(tn, 0xe10000, 1);
 		if (!cp) cp = "---unknown---";
-		printf("%04x  (%06x)  %s\n", tn, addr, cp);
+		printf("%04x  (%06x)  %s\n", n, addr, cp);
 	} else {
 		/* 0 - show tsptr + name */
 		cp = debug_tool_name(tn, 0xe10000, 1);
