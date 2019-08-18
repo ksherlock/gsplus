@@ -152,28 +152,214 @@ void clear_prev_line(void) {
  * - gs/os break support
  * - p8 break support
  * - r -> run to next rts/rtl
+ * - " -> search nifty list data file
+ * - option to search gs/os loader tables
  */
 
-#if 0
-static char *find_user_id_name(unsigned id) {
+
+static char *gs_to_cstr(word32 address) {
+	unsigned size = get_memory16_c(address, 0);
+	char *cp;
+
+	cp = malloc(size + 1);
+	if (cp) {
+		for (unsigned i = 0; i < size; ++i) {
+			cp[i] = get_memory16_c(address + 2 + i, 0);
+		}
+		cp[size] = 0;
+	}
+	return cp;
+}
+static const char *gs_basename(const char *cp) {
+	if (!cp) return NULL;
+	char *tmp = strrchr(cp, ':');
+	if (tmp) return tmp + 1;
+	return cp;
+}
+
+
+struct loader_entry {
+	/* first because they're used for sorting */
+	word16 user_id;
+	word16 file_num;
+
+	word32 express_handle;
+	word32 address;
+	word16 stack;
+	word16 stack_size;
+	char *path;
+};
+
+static int loader_entry_compare(const void *a, const void *b) {
+	const struct loader_entry *aa = a;
+	const struct loader_entry *bb = b;
+
+	word32 aaa = (aa->user_id << 16) | aa->file_num;
+	word32 bbb = (bb->user_id << 16) | bb->file_num;
+
+	if (aaa < bbb) return -1;
+	if (aaa > bbb) return +1;
+	return 0;
+}
+
+static struct loader_entry *g_loader_names = NULL;
+static int g_loader_names_count = 0;
+
+static void load_loader_names(void) {
 
 	enum {
-		oUserHandle = 0x0078, /* from gs/os direct page */
-		OSKind = 0xe100bc
+		MemList	= 0xe11600,
+		PurgeList = 0xe11604,
+		FreeList = 0xe11608,
+
+		OSKind = 0xe100bc,
+
+		reserved = 256
 	};
 
-	word32 handle;
-	word32 ptr;
+	enum {
+		offset_address = 0,
+		offset_attr = 4,
+		offset_owner = 6, 
+		offset_size = 8,
+		offset_prev = 12,
+		offset_next = 16 
+	};
 
-	if (get_memory_c(OSKind, 0) != 1) return NULL;
 
-	handle = get_memory32_c(0x00bf78, 0);
-	if (handle == 0 || handle > 0xffffff) return NULL;
-	ptr = get_memory32_c(ptr, 0);
-	if (ptr == 0 || ptr > 0xffffff) return NULL;
+	unsigned count = 0;
+
+
+	g_loader_names_count = 0;
+	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
+	if (get_memory_c(OSKind, 0) != 1) return;
+
+	/* load the express load table */
+	word32 handle = get_memory24_c(MemList, 0);
+	for(; handle ; handle = get_memory24_c(handle + offset_next, 0)) {
+
+		word32 address = get_memory24_c(handle + offset_address, 0);
+		word32 size = get_memory24_c(handle + offset_size, 0);
+		unsigned owner = get_memory16_c(handle + offset_owner, 0);
+		//unsigned attr = get_memory16_c(handle + offset_attr, 0);
+
+		if (!address) continue;
+
+		if (owner == 0x7201 && size == 2048) {
+			/* expressload table */
+			enum {
+				offset_user_id = 0,
+				offset_express_handle = 2,
+				offset_stack = 6,
+				offset_stack_size = 8,
+				offset_address = 10
+			};
+
+			for (unsigned offset = 16; offset < 2048; offset += 16) {
+
+				unsigned ea = address + offset;
+				unsigned id = get_memory16_c(ea + offset_user_id, 0);
+				word32 h = get_memory32_c(ea + offset_express_handle, 0);
+				if (!h || !id) continue;
+
+				g_loader_names[count].user_id = id;
+				g_loader_names[count].express_handle = h;
+				g_loader_names[count].stack = get_memory16_c(ea + offset_stack, 0);
+				g_loader_names[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
+				g_loader_names[count].address = get_memory32_c(ea + offset_address, 0);
+				g_loader_names[count].file_num = 1;
+
+				if (++count >= reserved) break;
+			}
+		}
+		if (owner == 0x7004 && size > 32) {
+			/* non-expressload table */
+			enum {
+				offset_user_id = 8,
+				offset_file_num = 10,
+				offset_date = 12,
+				offset_stack = 20,
+				offset_stack_size = 22,
+				offset_address = 26,
+				offset_path = 30
+			};
+
+			unsigned ea = address;
+			g_loader_names[count].user_id = get_memory16_c(ea + offset_user_id, 0);
+			g_loader_names[count].file_num = get_memory16_c(ea + offset_file_num, 0);
+			g_loader_names[count].stack = get_memory16_c(ea + offset_stack, 0);
+			g_loader_names[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
+			g_loader_names[count].address = get_memory16_c(ea + offset_address, 0);
+
+			/* load the pathname now... */
+			unsigned psize = get_memory16_c(ea + offset_path, 0);
+			if (offset_path + 2 + psize > size) continue; /* oops */
+			char *cp = gs_to_cstr(ea + offset_path);
+			if (!cp) continue;
+			g_loader_names[count].path = cp;
+
+			if (++count >= reserved) break;
+		}
+
+		if (count >= reserved) break;
+	}
+
+
+	g_loader_names_count = count;
+
+	qsort(g_loader_names, count, sizeof(struct loader_entry), loader_entry_compare);
 
 }
-#endif
+
+static void dispose_loader_names(void) {
+	if (!g_loader_names) return;
+	for (int i = 0; i < g_loader_names_count; ++i) {
+		if (g_loader_names[i].path)
+			free(g_loader_names[i].path);
+	}
+	free(g_loader_names);
+	g_loader_names = NULL;
+	g_loader_names_count = 0;
+}
+
+static char *get_pathname(int user_id, int file_num) {
+
+	if (!g_loader_names) {
+		load_loader_names();
+	}
+	if (!g_loader_names) return NULL;
+
+	struct loader_entry tmp = { user_id & 0xf0ff, file_num };
+	struct loader_entry *e = bsearch(&tmp, g_loader_names, g_loader_names_count, sizeof(struct loader_entry), loader_entry_compare);
+	if (!e) {
+		switch (user_id >> 12) {
+			case 0x0: return "(memory manager)";
+			case 0x1: return "(application)";
+			case 0x2: return "(control program)";
+			case 0x3: return "(GS/OS)";
+			case 0x4:
+				if ((user_id >> 8) == 0x41) return "(misc tools)";
+				if ((user_id >> 8) == 0x42) return "(scrap manager)";
+				return "(toolbox)";
+			case 0x5: return "(desk accessory)";
+			case 0x6: return "(runtime library)";
+			case 0x7: return "(loader)";
+			case 0x8: return "(firmware)";
+			case 0x9: return "(tool locator)";
+			case 0xa: return "(initialization file)";
+		}
+		return NULL;
+	}
+	if (e->path) return gs_basename(e->path);
+
+	/* load the name from the expressload segment */
+	word32 h = e->express_handle;
+	word32 address = get_memory24_c(h, 0);
+	int offset = get_memory16_c(address + 2, 0);
+	char *cp = gs_to_cstr(address + offset);
+	e->path = cp;
+	return gs_basename(cp);
+}
 
 static void do_handle(word32 value, int action) {
 	/* action = I)nfo, W)who, H)handle */
@@ -199,8 +385,8 @@ static void do_handle(word32 value, int action) {
 	/* return information on who owns an address. */
 	/* Nifty list can get info from the GS/OS... we can't */
 
-	fputs("handle addr   size   flgs ownr\n", stdout);
-	fputs("------ ------ ------ ---- ----\n", stdout);
+	fputs("handle addr   size   flgs ownr path\n", stdout);
+	fputs("------ ------ ------ ---- ---- ----\n", stdout);
 
 
 	if (action == 'i') {
@@ -238,8 +424,11 @@ static void do_handle(word32 value, int action) {
 				if (value != handle) continue;
 			}
 
-			fprintf(stdout, "%06x %06x %06x %04x %04x\n",
-				handle, address, size, attr, owner
+			char *path;
+			path = get_pathname(owner, 1);
+			if (!path) path = "";
+			fprintf(stdout, "%06x %06x %06x %04x %04x %s\n",
+				handle, address, size, attr, owner, path
 			);
 			++count;
 			if (action == 'w' || action == 'h') break;
@@ -1946,7 +2135,10 @@ void do_go() {
   g_config_control_panel = 1;
   if (g_dbg_shell) {
   	ok = debug_shell(0);
-  	if (!ok) return;
+  	if (!ok) {
+      	dispose_loader_names();
+  		return;
+  	}
   }
 
   g_config_control_panel = 0;
@@ -1960,7 +2152,10 @@ void do_go() {
     if (ret || g_stepping) {
       g_config_control_panel = 1;
       ok = debug_shell(ret);
-      if (!ok) return;
+      if (!ok) {
+      	dispose_loader_names();
+      	return;
+      }
       g_config_control_panel = 0;
       halt_sim &= ~0x07; /* clear any pending control-Cs, etc. */
     }
