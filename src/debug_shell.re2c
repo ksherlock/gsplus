@@ -453,12 +453,27 @@ word32 tool_lookup(unsigned tool) {
 	enum {
 		TPtr = 0xe103c0,
 		UTPtr = 0xe103c4,
+		WAPTPtr = 0xe103c8,
+		UWAPTPtr = 0xe103cc
 	};
 
+	tool &= 0xffff;
 	unsigned tn = tool & 0xff;
 	unsigned ix = (tool >> 8) & 0xff;
 	word32 ptr;
 	word32 count;
+
+	if (tool == 0) {
+		fputs("    Sys  TPT    User TPT    Sys WAPT   User WAPT\n", stdout);
+		fputs("    --------    --------    --------   ---------\n", stdout);
+		fprintf(stdout, "    %08x    %08x    %08x    %08x\n",
+			get_memory32_c(TPtr, 0),
+			get_memory32_c(UTPtr, 0),
+			get_memory32_c(WAPTPtr, 0),
+			get_memory32_c(UWAPTPtr, 0)
+		);
+		return 0;
+	}
 
 	ptr = get_memory32_c(TPtr, 0);
 	if (ptr == 0 || ptr > 0xffffff) return 0;
