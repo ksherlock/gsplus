@@ -351,11 +351,44 @@ static void dispose_loader_names(void) {
 	g_loader_loaded = 0;
 }
 
+static char *loader_load_path(struct loader_entry *e) {
+
+	if (e->path) return e->path;
+
+	word32 h = e->express_handle;
+	word32 address = get_memory24_c(h, 0);
+	int offset = get_memory16_c(address + 2, 0);
+	char *cp = gs_to_cstr(address + offset);
+	e->path = cp;
+	return cp;
+}
+
+static void debug_goodies_ids(void) {
+	/* list all ids/paths from the loader table */
+	if (!g_loader_loaded)
+		load_loader_names();
+
+	fputs(
+		"ID    pathname\n"
+		"----  --------\n",
+		stdout
+	);
+	struct loader_entry *e = g_loader_names;
+	unsigned prev = 0;
+	for (int i = 0; i < g_loader_names_count; ++i, ++e) {
+		if (prev != e->user_id) {
+			char *cp = loader_load_path(e);
+			if (cp)
+				printf("%04x %s\n", e->user_id, cp);
+		}
+		prev = e->user_id;
+	}
+}
+
 static char *get_pathname(int user_id, int file_num) {
 
-	if (!g_loader_loaded) {
+	if (!g_loader_loaded)
 		load_loader_names();
-	}
 
 	if (!g_loader_names) return NULL;
 
@@ -380,15 +413,9 @@ static char *get_pathname(int user_id, int file_num) {
 		}
 		return NULL;
 	}
-	if (e->path) return gs_basename(e->path);
-
-	/* load the name from the expressload segment */
-	word32 h = e->express_handle;
-	word32 address = get_memory24_c(h, 0);
-	int offset = get_memory16_c(address + 2, 0);
-	char *cp = gs_to_cstr(address + offset);
-	e->path = cp;
-	return gs_basename(cp);
+	char *cp = loader_load_path(e);
+	if (cp) return gs_basename(cp);
+	return "???";
 }
 
 static void do_handle(word32 value, int action) {
@@ -2012,6 +2039,11 @@ command:
 			/* address\temp name */
 			while (isspace(*YYCURSOR)) ++YYCURSOR;
 			g_prev_address = debug_apply_template(addr, YYCURSOR);
+			return 0;
+		}
+
+		"\\ids" eol {
+			debug_goodies_ids();
 			return 0;
 		}
 
