@@ -204,6 +204,7 @@ static int loader_entry_compare(const void *a, const void *b) {
 
 static struct loader_entry *g_loader_names = NULL;
 static int g_loader_names_count = 0;
+static int g_loader_loaded = 0;
 
 static void load_loader_names(void) {
 
@@ -229,6 +230,8 @@ static void load_loader_names(void) {
 
 	unsigned count = 0;
 
+	if (g_loader_loaded) return;
+	g_loader_loaded = 1;
 
 	g_loader_names_count = 0;
 	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
@@ -320,13 +323,15 @@ static void dispose_loader_names(void) {
 	free(g_loader_names);
 	g_loader_names = NULL;
 	g_loader_names_count = 0;
+	g_loader_loaded = 0;
 }
 
 static char *get_pathname(int user_id, int file_num) {
 
-	if (!g_loader_names) {
+	if (!g_loader_loaded) {
 		load_loader_names();
 	}
+
 	if (!g_loader_names) return NULL;
 
 	struct loader_entry tmp = { user_id & 0xf0ff, file_num };
