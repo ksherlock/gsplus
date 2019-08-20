@@ -1820,7 +1820,7 @@ static int parse_command(const char *cp) {
 		"%y=" { return do_assign(YYCURSOR, REG_Y); }
 		"%d=" { return do_assign(YYCURSOR, REG_D); }
 		"%e=" { return do_assign(YYCURSOR, REG_E); }
-		"5s=" { return do_assign(YYCURSOR, REG_S); }
+		"%s=" { return do_assign(YYCURSOR, REG_S); }
 		"%k=" { return do_assign(YYCURSOR, REG_K); }
 		"%b=" { return do_assign(YYCURSOR, REG_B); }
 		"%p=" { return do_assign(YYCURSOR, REG_P); }
