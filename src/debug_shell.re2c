@@ -52,6 +52,19 @@ extern word32 debug_apply_template(word32 address, const char *name);
 extern void debug_load_nifty(const char *path);
 extern const char *debug_tool_name(unsigned number, unsigned vector, unsigned full);
 
+
+/* "goodies" module.  implemented in debug_template.re2c */
+int debug_goodies_err(unsigned number);
+int debug_goodies_rtype(unsigned number);
+int debug_goodies_p8(unsigned number);
+int debug_goodies_os(unsigned number);
+int debug_goodies_00(unsigned number);
+int debug_goodies_01(unsigned number);
+int debug_goodies_e0(unsigned number);
+int debug_goodies_e1(unsigned number);
+
+
+
 static const char *get_inline_debug_name(word32 address);
 
 
@@ -2001,6 +2014,40 @@ command:
 			g_prev_address = debug_apply_template(addr, YYCURSOR);
 			return 0;
 		}
+
+		"\\00" eol {
+			debug_goodies_00(addr);
+			return 0;
+		}
+		"\\01" eol {
+			debug_goodies_01(addr);
+			return 0;
+		}
+		"\\e0" eol {
+			debug_goodies_e0(addr);
+			return 0;
+		}
+		"\\e1" eol {
+			debug_goodies_e1(addr);
+			return 0;
+		}
+		"\\os" eol {
+			debug_goodies_os(addr);
+			return 0;
+		}
+		"\\p8" eol {
+			debug_goodies_p8(addr);
+			return 0;
+		}
+		"\\err" eol {
+			debug_goodies_err(addr);
+			return 0;
+		}
+		"\\rtype" eol {
+			debug_goodies_rtype(addr);
+			return 0;
+		}
+
 
 		"h" eol {
 			g_prev_address = addr;

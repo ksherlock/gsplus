@@ -501,10 +501,12 @@ void debug_load_nifty(const char *path) {
 	const char *YYCTXMARKER = NULL;
 
 	int section = 0;
-	unsigned vector = 0;
-	static unsigned vectors[] = {
-		0xbf00, 0xe100a8, 0xe10000, 0xe10008, 0xe1, 0xe0, 0xff, 0x01,
-		0x00, 0x00, 0x00, 0x00, 0x00
+	int vector = 0xbf00;
+	static int vectors[] = {
+		0xbf00, 0xe100a8, 0xe10000, 0xe10008,
+		0xe1, 0xe0, 0x00, 0x01,
+		-1, 0x0101, 0x0102, -1,
+		-1
 	};
 
 
@@ -531,7 +533,7 @@ void debug_load_nifty(const char *path) {
 			}
 			"*" {
 				++section;
-				vector = 0;
+				vector = -1;
 				if (section < sizeof(vectors) / sizeof(vectors[0]))
 					vector = vectors[section];
 				continue;
@@ -539,10 +541,10 @@ void debug_load_nifty(const char *path) {
 			x{4} / ws { goto ok; }
 		*/
 ok:
+		if (vector < 0) continue;
 		end = cp;
 		tool.number = to_hex(start, end);
 		if (section == 0 && tool.number >= 0xfff0) continue;
-		if (!vector) continue;
 
 		while (isspace(*cp)) ++cp;
 		/* skip p8/p16/ prefix */
@@ -556,7 +558,7 @@ prefix:
 			/*!re2c
 			"" / eol { break; }
 			"(" | ws {
-				if (vector > 0x100 ) {
+				if (vector >= 0xbf00 ) {
 					--cp;
 					break;
 				}
@@ -571,7 +573,7 @@ prefix:
 
 
 			tool.fullname = NULL; 
-			if (vector > 0x0100) {
+			if (vector >= 0xbf00) {
 				/* add a leading _ */
 				tool.name = malloc(l + 2);
 				tool.name[0] = '_';
@@ -634,4 +636,64 @@ int lookup_tool_number(const char *name, unsigned vector) {
 	return t->number;
 }
 
+static int debug_goodies_list(unsigned number, unsigned vector, int size) {
+
+	if (!size) size = 6;
+	unsigned mask = 0;
+	number &= 0xffff;
+	if (vector <= 0xff) mask = vector << 16;
+	if (number) {
+		struct tool tmp = { 0, 0, number, vector };
+		struct tool *t = bsearch(&tmp, tools, tool_count, sizeof(struct tool), tool_compare);
+
+		const char *name = "--no entry found--";
+		if (t) name = t->fullname ? t->fullname : t->name;
+		printf("%0.*x %s\n", size, number | mask, name);
+	} else {
+		/* todo -- index of starting points for each vector? */
+		struct tool *t = tools;
+		for (int i = 0; i < tool_count; ++i, ++t) {
+			if (t->vector < vector) continue;
+			if (t->vector > vector) break;
+
+			const char *name = t->fullname ? t->fullname : t->name;
+
+			printf("%0.*x %s\n", size, t->number | mask, name);
+		}
+	}
+	return 0;
+}
+
+int debug_goodies_err(unsigned number) {
+	/* todo - nifty list also prints tool # for, eg 0200\err */
+	return debug_goodies_list(number, 0x0102, 4);
+}
+
+int debug_goodies_rtype(unsigned number) {
+	return debug_goodies_list(number, 0x0101, 4);
+}
+
+int debug_goodies_p8(unsigned number) {
+	return debug_goodies_list(number, 0xbf00, 4);
+}
+
+int debug_goodies_os(unsigned number) {
+	return debug_goodies_list(number, 0xe100a8, 4);
+}
+
+int debug_goodies_00(unsigned number) {
+	return debug_goodies_list(number, 0x00, 6);
+}
+
+int debug_goodies_01(unsigned number) {
+	return debug_goodies_list(number, 0x01, 6);
+}
+
+int debug_goodies_e0(unsigned number) {
+	return debug_goodies_list(number, 0xe0, 6);
+}
+
+int debug_goodies_e1(unsigned number) {
+	return debug_goodies_list(number, 0xe1, 6);
+}
 
