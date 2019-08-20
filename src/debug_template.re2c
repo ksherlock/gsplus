@@ -697,3 +697,23 @@ int debug_goodies_e1(unsigned number) {
 	return debug_goodies_list(number, 0xe1, 6);
 }
 
+int debug_find(const char *needle) {
+	/* todo -- tools should display function address and set g_prev_address. */
+
+	struct tool *t = tools;
+	for (int i = 0; i < tool_count; ++i, ++t) {
+		char *haystack = t->fullname ? t->fullname : t->name;
+		if (!strcasestr(haystack, needle)) continue;
+		unsigned n = t->number;
+		unsigned size;
+		if (t->vector < 0x100) {
+			n |= (t->vector << 16);
+			size = 6;
+		} else {
+			size = 4;
+		}
+		printf("%0.*x %s\n", size, n, haystack);
+	}
+	return 0;
+}
+

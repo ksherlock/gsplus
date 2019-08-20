@@ -2047,7 +2047,12 @@ command:
 			debug_goodies_rtype(addr);
 			return 0;
 		}
-
+		"\""  {
+			extern int debug_find(const char *needle);
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			debug_find(YYCURSOR);
+			return 0;
+		}
 
 		"h" eol {
 			g_prev_address = addr;
