@@ -1519,39 +1519,6 @@ set_psr:
 	return 0;
 }
 
-#if 0
-static int do_brk_cop(const char *cp, int which) {
-	/* brk=1 / brk=0 */
-
-	const char *YYCURSOR = cp;
-	int value = 0;
-
-	/*!re2c
-		[01] eol {
-			value = *cp - '0';
-			goto next;
-		}
-		* { return -1; }
-	*/
-next:
-
-	switch(which) {
-		case 0x00:
-			engine.flags &= ~FLAG_WANT_BRK;
-			if (value) engine.flags |= FLAG_WANT_BRK;
-			printf("brk intercept %s\n\n", value ? "on" : "off");
-			break;
-		case 0x02:
-			engine.flags &= ~FLAG_WANT_COP;
-			if (value) engine.flags |= FLAG_WANT_COP;
-			printf("cop intercept %s\n\n", value ? "on" : "off");
-			break;
-	}
-	return 0;
-}
-#endif
-
-
 static word32 do_mem_assign(word32 addr, const char *cp) {
 	/* "string" -> pokes ASCII chars */
 	/* 'string' -> pokes ASCII chars | 0x80 */
