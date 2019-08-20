@@ -304,6 +304,18 @@ static void load_loader_names(void) {
 			if (++count >= reserved) break;
 		}
 
+		if (owner == 0x7003 && size == 20) {
+			/* non-express load segment info */
+			enum {
+				offset_user_id = 8,
+				offset_handle = 10,
+				offset_file_num = 14,
+				offset_seg_num = 16,
+				offset_kind = 18
+			};
+
+		}
+
 		if (count >= reserved) break;
 	}
 
