@@ -809,8 +809,8 @@ static int parse_line(const char *cp, uint32_t *pc) {
     if (addr >> 16) return error(0, "invalid bank");
 
     set_memory_c(addr++, 0x20, 0);
-    set_memory_c(addr++, 0xbf, 0);
     set_memory_c(addr++, 0x00, 0);
+    set_memory_c(addr++, 0xbf, 0);
     set_memory_c(addr++, cookie.extra >> 0, 0);
     set_memory_c(addr++, cookie.operand >> 0, 0);
     set_memory_c(addr++, cookie.operand >> 8, 0);
