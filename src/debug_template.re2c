@@ -548,6 +548,7 @@ ok:
 
 		while (isspace(*cp)) ++cp;
 		/* skip p8/p16/ prefix */
+		const char *fullstart = cp;
 		/*!re2c
 			"P8:" | "P16:" | "Shell:" | "GS/OS:" { goto prefix; }
 			"" { goto prefix; }
@@ -575,11 +576,15 @@ prefix:
 			tool.fullname = NULL; 
 			if (vector >= 0xbf00) {
 				/* add a leading _ */
-				tool.name = malloc(l + 2);
+				/* and trailing GS for gs/os */
+				tool.name = malloc(l + 2 + 2);
 				tool.name[0] = '_';
 				strncpy(tool.name + 1, start, l);
 				tool.name[l + 1] = 0;
-				tool.fullname = strdup(start);
+				if (vector == 0xe100a8 && (tool.number & 0x2000)) {
+					strcat(tool.name, "GS");
+				}
+				tool.fullname = strdup(fullstart);
 			}
 			else tool.name = strndup(start, l);
 			add_tool(&tool);
