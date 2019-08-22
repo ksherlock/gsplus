@@ -125,6 +125,16 @@ add_custom_command(
 	MAIN_DEPENDENCY debug_miniasm.re2c
 )
 
+if(__CLANG__ OR __GCC__)
+	set_source_files_properties(
+		debug_shell.c
+		debug_template.c
+		debug_sweet16.c
+		debug_miniasm.c
+		PROPERTIES COMPILE_FLAGS -Wno-unused-variable
+	)
+endif()
+
 
 if (WITH_STATIC)
 	if(__CLANG__ OR __GCC__)
