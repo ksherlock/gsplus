@@ -9,6 +9,7 @@
 
 extern int g_disasm_psr;
 
+static int g_os_type = 0xe100a8;
 
 static uint32_t to_hex(const char *iter, const char *end) {
   uint32_t rv = 0;
@@ -67,6 +68,7 @@ enum {
   GSOS_CALL,
   MLI_CALL,
   LONG_SHORT,
+  OS
 };
 
 struct mnemonic_entry {
@@ -443,6 +445,29 @@ static const char *parse_mx(const char *cp, struct cookie *cookie) {
   return ltrim(cp);
 }
 
+/* os p8 , os gsos */
+static const char *parse_os(const char *cp, struct cookie *cookie) {
+
+  const char *YYCURSOR = cp;
+  const char *YYMARKER = NULL;
+  const char *YYCTXMARKER = NULL;
+
+  if (!cp) return NULL;
+
+  /*!re2c
+  * { return NULL; }
+  'p8' | 'prodos' {
+    cookie->operand = 0xbf00;
+    return YYCURSOR;
+  }
+  'p16' | 'gsos' | 'gs/os' {
+    cookie->operand = 0xe100a8;
+    return YYCURSOR;
+  }
+  */
+}
+
+
 static const char *parse_expr(const char *cp, struct cookie *cookie) {
 
   const char *YYCURSOR = cp;
@@ -551,18 +576,21 @@ static const char *parse_opcode(const char *cp, struct cookie *cookie) {
     extern int lookup_tool_number(const char *name, unsigned vector);
 
     char name[20];
-    int i;
+    int tool;
 
     memcpy(name, cp, YYCURSOR - cp);
     name[YYCURSOR - cp] = 0;
 
-    for (i = 0; i < 3; ++i) {
-      static unsigned vectors[] = { 0xe10000, 0xe100a8, 0xbf00 };
-      static unsigned types[] = { TOOL_CALL, GSOS_CALL, MLI_CALL };
+    tool = lookup_tool_number(name, 0xe10000);
+    if (tool > 0) {
+      cookie->mnemonic = TOOL_CALL;
+      cookie->extra = tool;
+      return ltrim(YYCURSOR);
+    }
 
-      int tool = lookup_tool_number(name, vectors[i]);
-      if (tool <= 0) continue;
-      cookie->mnemonic = types[i];
+    tool = lookup_tool_number(name, g_os_type);
+    if (tool > 0) {
+      cookie->mnemonic = g_os_type == 0xe100a8 ? GSOS_CALL : MLI_CALL;
       cookie->extra = tool;
       return ltrim(YYCURSOR);
     }
@@ -577,6 +605,10 @@ static const char *parse_opcode(const char *cp, struct cookie *cookie) {
   'short' / (ws|eol) {
     cookie->mnemonic = LONG_SHORT;
     cookie->mode = 1;
+    return ltrim(YYCURSOR);
+  }
+  'os' / (ws|eol) {
+    cookie->mnemonic = OS;
     return ltrim(YYCURSOR);
   }
 
@@ -725,6 +757,8 @@ static int parse_line(const char *cp, uint32_t *pc) {
 
   /* label only? */
   if (!*cp) {
+    fputs("\r\x1b[A\x1b[K", stdout);
+    printf("%02x/%04x:\n", addr >> 16, addr & 0xffff);
     *pc = addr;
     return 0;
   }
@@ -756,6 +790,20 @@ static int parse_line(const char *cp, uint32_t *pc) {
       g_disasm_psr & 0x0020 ? 1 : 0,
       g_disasm_psr & 0x0010 ? 1 : 0
     );
+    *pc = addr;
+    return 1;
+  }
+  if (cookie.mnemonic == OS) {
+    cp = parse_os(cp, &cookie);
+    if (!cp || *cp) return error(offset, "bad operand");
+    g_os_type = cookie.operand;
+
+    fputs("\r\x1b[A\x1b[K", stdout);
+    printf("%02x/%04x: ; OS %s\n",
+      addr >> 16, addr & 0xffff,
+      cookie.operand == 0xbf00 ? "PRODOS" : "GS/OS"
+    );
+    *pc = addr;
     return 1;
   }
 
@@ -778,7 +826,7 @@ static int parse_line(const char *cp, uint32_t *pc) {
     set_memory_c(addr++, 0x00, 0);
     set_memory_c(addr++, 0x00, 0);
     set_memory_c(addr++, 0xe1, 0);
-    goto out;
+    goto list_out;
   }
 
 
@@ -799,7 +847,7 @@ static int parse_line(const char *cp, uint32_t *pc) {
     set_memory_c(addr++, cookie.operand >> 16, 0);
     set_memory_c(addr++, cookie.operand >> 24, 0);
 
-    goto out;
+    goto list_out;
   }
 
   if (cookie.mnemonic == MLI_CALL) {
@@ -815,7 +863,7 @@ static int parse_line(const char *cp, uint32_t *pc) {
     set_memory_c(addr++, cookie.operand >> 0, 0);
     set_memory_c(addr++, cookie.operand >> 8, 0);
 
-    goto out;
+    goto list_out;
   }
 
 
@@ -843,7 +891,7 @@ static int parse_line(const char *cp, uint32_t *pc) {
 	}
 
 
-out:
+list_out:
 	fputs("\r\x1b[A\x1b[K", stdout);
 	do_list(cookie.pc, 1);
 	*pc = addr;
