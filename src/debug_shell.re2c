@@ -559,7 +559,7 @@ word32 tool_lookup(unsigned tool) {
 		unsigned n = tn + (ix << 8);
 		addr = get_memory24_c(ptr + ix * 4, 0);
 		if (addr) ++addr;
-		cp = debug_tool_name(tn, 0xe10000, 1);
+		cp = debug_tool_name(n, 0xe10000, 1);
 		if (!cp) cp = "---unknown---";
 		printf("%04x  (%06x)  %s\n", n, addr, cp);
 	} else {
