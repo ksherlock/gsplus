@@ -33,6 +33,14 @@ word32 g_bp_breakpoints[MAX_BREAK_POINTS];
 int g_num_tp_breakpoints = 0;
 word32 g_tp_breakpoints[MAX_BREAK_POINTS];
 
+
+int g_num_toolbox_breakpoints;
+word32 g_toolbox_breakpoints[MAX_BREAK_POINTS];
+
+int g_num_gsos_breakpoints;
+word32 g_gsos_breakpoints[MAX_BREAK_POINTS];
+
+
 int g_dbg_shell = 0;
 int g_stepping = 0;
 
@@ -1695,6 +1703,123 @@ int delete_bp(int type, word32 addr) {
 }
 
 
+static int tbrk(int type, int clear, word32 num, const char *cp) {
+    extern int lookup_tool_number(const char *name, unsigned vector);
+	extern const char *debug_tool_name(unsigned number, unsigned vector, unsigned full);
+
+	/*
+	 *
+	 * \tbrk - list all tool breaks
+	 * xxxx\tbrk - add tool break
+	 * \tbrk #xxxx - add tool break
+	 * \tbrk _name - add tool break;
+	 * \clrtbrk - remove all tool breaks
+	 *
+	 *
+	 */
+
+	word32 *breakpoints = 0;
+	int num_breakpoints = 0;
+	unsigned vector = 0;
+
+	switch(type) {
+		case 'T':
+			breakpoints = g_toolbox_breakpoints;
+			num_breakpoints = g_num_toolbox_breakpoints;
+			vector = 0xe10000;
+			break;
+		case 'O':
+			breakpoints = g_gsos_breakpoints;
+			num_breakpoints = g_num_gsos_breakpoints;
+			vector = 0xe100a8;
+			break;
+		default:
+			return 0;
+	}
+	if (cp && !*cp) cp = NULL;
+
+	if (cp) {
+		const char *YYCURSOR = cp;
+		const char *YYMARKER = NULL;
+		const char *YYCTXMARKER = NULL;
+		/*!re2c
+			* {
+				fputs("Invalid argument\n", stderr);
+				return 0;
+			}
+			"#" x{4} eol {
+				num = to_hex(cp + 1, YYCURSOR);
+				goto ok;
+
+			}
+			"_" [A-Za-z0-9_]* eol {
+				num = lookup_tool_number(cp, vector);
+				if (num == 0) {
+					fputs("Unknown tool\n", stderr);
+					return 0;
+				}
+				goto ok;
+			}
+
+		*/
+	}
+
+	if (!num) {
+
+		if (clear) {
+			num_breakpoints = 0;
+			goto update;
+		}
+
+		fputs("Breakpoints:\n", stdout);
+		for (int i = 0; i < num_breakpoints; ++i) {
+			unsigned x = breakpoints[i];
+			const char *cp = debug_tool_name(x, vector, 0);
+			if (cp) printf("%04x %s\n", x, cp);
+			else printf("%04x\n", x);
+		}
+		return 0;
+	}
+
+ok:
+	num &= 0xffff;
+	/* check if already in table... */
+	int ix = 0;
+	for (ix = 0; ix < num_breakpoints; ++ix) {
+		if (breakpoints[ix] == num) break;
+	}
+
+	if (clear) {
+		if (ix == num_breakpoints) return 0;
+		breakpoints[ix] = breakpoints[--num_breakpoints];
+		goto update;
+	}
+
+	if (ix < num_breakpoints) return 1; /* already set */
+	if (num_breakpoints == MAX_BREAK_POINTS) {
+		return 0;
+	}
+	breakpoints[num_breakpoints++] = num;
+
+update:
+	qsort(breakpoints, num_breakpoints, sizeof(word32), addr_cmp);
+
+	switch(type) {
+		case 'T':
+			g_num_toolbox_breakpoints = num_breakpoints;
+			break;
+		case 'O':
+			g_num_gsos_breakpoints = num_breakpoints;
+			break;
+	}
+
+	engine.flags &= ~FLAG_WANT_JSL;
+	if (g_num_toolbox_breakpoints || g_num_gsos_breakpoints) {
+		engine.flags |= FLAG_WANT_JSL;
+	}
+	return 1;
+}
+
 static void do_help(void) {
 
 	fputs(
@@ -1717,7 +1842,7 @@ static void do_help(void) {
 		"\n"
 		"\n"
 		"Address = 12/3456, 123456, or 1234\n"
-		"Register = %%a, %%x, %%y, %%pc, etc\n",
+		"Register = %a, %x, %y, %pc, etc\n",
 		stdout);
 }
 
@@ -2007,6 +2132,36 @@ command:
 			else set_bp('M', addr);
 			return 0;
 		}
+		"\\tbrk" / (ws|eol) {
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			if (has_addr) addr |= 0x010000;
+			else addr = 0;
+			tbrk('T', 0, addr, YYCURSOR);
+			return 0;
+		}
+		"\\osbrk" / (ws|eol) {
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			if (has_addr) addr |= 0x010000;
+			else addr = 0;
+			tbrk('O', 0, addr, YYCURSOR);
+			return 0;
+		}
+
+		"\\clrtbrk" / (ws|eol) {
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			if (has_addr) addr |= 0x010000;
+			else addr = 0;
+			tbrk('T', 1, addr, YYCURSOR);
+			return 0;
+		}
+		"\\clrosbrk" / (ws|eol) {
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			if (has_addr) addr |= 0x010000;
+			else addr = 0;
+			tbrk('O', 1, addr, YYCURSOR);
+			return 0;
+		}
+
 
 		"\\temp" / (ws|eol) {
 			/* apply a gsbug template to memory */
