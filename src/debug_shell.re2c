@@ -2239,7 +2239,7 @@ command:
 			return 0;
 		}
 
-		"t" {
+		"t" eol {
 			g_prev_address = tool_lookup(addr & 0xffff);
 			return 0;
 		}
