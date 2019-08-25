@@ -571,12 +571,14 @@ static const char *parse_opcode(const char *cp, struct cookie *cookie) {
 	/*!re2c
 	* { return NULL; }
 
-  '_' [A-Za-z] {0,16} / (ws|eol) {
+  '_' [A-Za-z0-9]* / (ws|eol) {
 
     extern int lookup_tool_number(const char *name, unsigned vector);
 
     char name[20];
     int tool;
+
+    if (YYCURSOR - cp >= sizeof(name)) return NULL;
 
     memcpy(name, cp, YYCURSOR - cp);
     name[YYCURSOR - cp] = 0;
