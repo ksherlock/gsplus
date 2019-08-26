@@ -71,7 +71,7 @@ brk_testing_SYM
 	DEC_KPC2;
 	CYCLES_PLUS_2
 	b	dispatch_done
-	depi	RET_BRK,3,4,ret0
+	depi	RET_BRK,7,8,ret0
 
 #else
 	GET_1BYTE_ARG;
@@ -797,7 +797,7 @@ inst42_SYM		/*  WDM */
 	CYCLES_PLUS_2
 	INC_KPC_2
 	b	dispatch_done
-	depi	RET_WDM,3,4,ret0
+	depi	RET_WDM,7,8,ret0
 #else
 	GET_1BYTE_ARG;
 	INC_KPC_2;
@@ -863,7 +863,7 @@ inst44_notnat_SYM
 	copy	dbank,ret0
 	dep	scratch2,23,8,ret0
 	CYCLES_PLUS_3
-	depi	RET_MVP,3,4,ret0
+	depi	RET_MVP,7,8,ret0
 	b	dispatch_done
 	CYCLES_PLUS_2
 
@@ -1098,7 +1098,7 @@ inst54_notnat_SYM
 	copy	dbank,ret0
 	dep	scratch2,23,8,ret0
 	CYCLES_PLUS_3
-	depi	RET_MVN,3,4,ret0
+	depi	RET_MVN,7,8,ret0
 	b	dispatch_done
 	CYCLES_PLUS_3
 #else
@@ -2382,7 +2382,7 @@ instdb_SYM		/*  STP */
 	ldb	1(scratch1),ret0
 	CYCLES_PLUS_1
 	b	dispatch_done
-	depi	RET_STP,3,4,ret0
+	depi	RET_STP,7,8,ret0
 #else
 	CYCLES_FINISH
 	FINISH(RET_STP, 0);

@@ -1502,7 +1502,7 @@ int run_prog()      {
     if(ret != 0) {
       g_engine_action++;
       handle_action(ret);
-      ret >>= 28;
+      ret >>= 24;
     }
 
     if(halt_sim & HALT_EVENT) {
@@ -2237,7 +2237,7 @@ void init_reg()      {
 void handle_action(word32 ret)      {
   int type;
 
-  type = EXTRU(ret,3,4);
+  type = EXTRU(ret,7,8);
   switch(type) {
     case RET_COP:
       do_cop(ret & 0xff);

@@ -1308,7 +1308,7 @@ check_irqs_pending
 	ldw	r%g_irq_pending(scratch1),scratch2
 	bb,<,n	psr,29,dispatch
 	comib,=	0,scratch2,dispatch
-	zdepi	RET_IRQ,3,4,ret0
+	zdepi	RET_IRQ,7,8,ret0
 	b,n	dispatch_done
 	nop
 
@@ -1494,14 +1494,14 @@ dispatch_instr_io
 	ldo	r%0xc700(scratch1),scratch1
 	addi	0x0a,scratch1,scratch2
 	comb,=	scratch1,kpc,dispatch_done
-	zdepi	RET_C700,3,4,ret0
+	zdepi	RET_C700,7,8,ret0
 
 	addi	0xd,scratch1,scratch3
 	comb,=	scratch2,kpc,dispatch_done
-	zdepi	RET_C70A,3,4,ret0
+	zdepi	RET_C70A,7,8,ret0
 
 	comb,=	scratch3,kpc,dispatch_done
-	zdepi	RET_C70D,3,4,ret0
+	zdepi	RET_C70D,7,8,ret0
 
 	.export dispatch_instr_pieces,code
 dispatch_instr_pieces

@@ -1148,7 +1148,7 @@ finish:
 
   engine_ptr->psr = psr;
 
-  return (g_ret1 << 28) + g_ret2;
+  return (g_ret1 << 24) + g_ret2;
 }
 
 
