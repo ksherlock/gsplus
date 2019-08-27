@@ -392,17 +392,15 @@ void dev_video_init_sdl() {
 
   SDL_SetTextureBlendMode(overlay_texture, SDL_BLENDMODE_BLEND);
   overlay_pixels = malloc(BASE_WINDOW_WIDTH*X_A2_WINDOW_HEIGHT*sizeof(Uint32));
+  memset(overlay_pixels, 0, BASE_WINDOW_WIDTH*X_A2_WINDOW_HEIGHT*sizeof(Uint32));
   Uint32 pixelARGB = 0x33000000;  // default "low grey"
   if (overlay_pixels) {
     if (g_scanline_simulator > 0) {
       pixelARGB = (int)(g_scanline_simulator*2.56) << 24;
     }
-    for (int y=0; y<X_A2_WINDOW_HEIGHT; y++) {
+    for (int y=0; y<X_A2_WINDOW_HEIGHT; y += 2) {
       for (int x=0; x<BASE_WINDOW_WIDTH; x++) {
-
-        if (y%2 == 1) {
-          overlay_pixels[(y*BASE_WINDOW_WIDTH)+x] = pixelARGB;
-        }
+        overlay_pixels[(y*BASE_WINDOW_WIDTH)+x] = pixelARGB;
       }
     }
   }
