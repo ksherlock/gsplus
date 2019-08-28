@@ -1151,7 +1151,7 @@ word32 do_list(word32 address, int lines) {
 
 		if (!comment) {
 			bank = pc >> 16;
-			if (bank == 0xe0 || bank == 0xe1 || bank == 0x01 || bank == 0xff)
+			if (bank == 0xe0 || bank == 0xe1 || bank == 0x01 || bank == 0x00)
 				comment = debug_tool_name(pc & 0xffff, bank, 1);
 		}
 
@@ -1218,6 +1218,11 @@ word32 do_list(word32 address, int lines) {
 						if (name) comment = name;
 					}
 				}
+				if (!comment) {
+					bank = operand >> 16;
+					if (bank == 0xe0 || bank == 0xe1 || bank == 0x01 || bank == 0x00)
+						comment = debug_tool_name(operand & 0xffff, bank, 1);
+				}
 				break;
 			case 0x20: /* jsr */
 				ea = (operand | (address & 0xff0000));
@@ -1234,6 +1239,12 @@ word32 do_list(word32 address, int lines) {
 						}
 					}
 				}
+				if (!comment) {
+					bank = pc >> 16;
+					if (bank == 0xe0 || bank == 0xe1 || bank == 0x01 || bank == 0x00)
+						comment = debug_tool_name(operand & 0xffff, bank, 1);
+				}
+
 				break;
 			/* relative ops have ea set above */
 			case 0x82: {
