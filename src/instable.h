@@ -479,6 +479,25 @@ inst22_SYM		/*  JSL Long */
 	nop
 #else
 	GET_3BYTE_ARG;
+
+	if (flags & FLAG_WANT_JSL) {
+		if (~flags & FLAG_IGNORE_JSL) {
+			if (arg == 0xe10000 && check_toolbox_breakpoints(kpc, xreg)) {
+				g_abort_address = arg;
+				FINISH(RET_JSL, arg);
+			}
+			if (arg == 0xe100a8 && check_gsos_breakpoints(kpc+4)) {
+				g_abort_address = arg;
+				FINISH(RET_JSL, arg);
+			}
+			if (arg == 0xe100b0 && check_gsos_breakpoints(stack+1)) {
+				g_abort_address = arg;
+				FINISH(RET_JSL, arg);
+			}
+		}
+	}
+
+
 	tmp1 = arg;
 	CYCLES_PLUS_3;
 	INC_KPC_3;

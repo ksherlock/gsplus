@@ -1466,7 +1466,7 @@ int run_prog()      {
     engine.fcycles = prerun_fcycles;
     fcycles_stop = (g_event_start.next->dcycs - g_last_vbl_dcycs) +
                    0.001;
-    if(g_stepping || engine.flags) {
+    if(g_stepping || (engine.flags & (FLAG_IGNORE_MP | FLAG_IGNORE_BP | FLAG_IGNORE_BRK | FLAG_IGNORE_JSL))) {
       fcycles_stop = prerun_fcycles;
     }
     g_fcycles_stop = fcycles_stop;
@@ -1601,7 +1601,8 @@ int run_prog()      {
     if (ret == RET_BP) break;
     if (ret == RET_BRK) break;
     if (ret == RET_COP) break;
-    engine.flags &= ~(FLAG_IGNORE_BP | FLAG_IGNORE_MP | FLAG_IGNORE_BRK);
+    if (ret == RET_JSL) break;
+    engine.flags &= ~(FLAG_IGNORE_BP | FLAG_IGNORE_MP | FLAG_IGNORE_BRK | FLAG_IGNORE_JSL);
     if(g_stepping) {
       ret = 0;
       break;
@@ -2270,6 +2271,7 @@ void handle_action(word32 ret)      {
     case RET_MP:
     case RET_BRK:
     case RET_HALT:
+    case RET_JSL:
       /* handled elsewhere */
       break;
     default:

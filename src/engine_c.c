@@ -406,6 +406,13 @@ extern word32 g_tp_breakpoints[];
 extern int g_num_mp_breakpoints;
 extern word32 g_mp_breakpoints[];
 
+extern int g_num_toolbox_breakpoints;
+extern word32 g_toolbox_breakpoints[];
+
+extern int g_num_gsos_breakpoints;
+extern word32 g_gsos_breakpoints[];
+
+
 extern word32 g_abort_address;
 extern word32 g_abort_value;
 extern word32 g_abort_bytes;
@@ -486,6 +493,29 @@ int check_mp_breakpoints(word32 addr, word32 value, unsigned bytes, int in_page,
   return 0;
 }
 
+
+int check_toolbox_breakpoints(word32 addr, word32 x) {
+  for (int i = 0; i < g_num_toolbox_breakpoints; ++i) {
+    if (x == g_toolbox_breakpoints[i]) {
+      g_abort_value = x;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int check_gsos_breakpoints(word32 addr) {
+  /* addr is either a pointer to the stack or the memory after the jsl */
+  unsigned x = get_memory16_c(addr, 0);
+
+  for (int i = 0; i < g_num_gsos_breakpoints; ++i) {
+    if (x == g_gsos_breakpoints[i]) {
+      g_abort_value = x;
+      return 1;
+    } 
+  }
+  return 0;
+}
 
 
 word32 get_memory8_io_stub(word32 addr, byte *stat, double *fcycs_ptr,
