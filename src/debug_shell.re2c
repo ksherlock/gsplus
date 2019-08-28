@@ -589,6 +589,43 @@ word32 tool_lookup(unsigned tool) {
 	return addr;
 }
 
+void do_registers(void) {
+
+	extern int g_c068_statereg;
+	extern int g_c035_shadow_reg;
+	extern int g_c036_val_speed;
+
+	unsigned kpc = engine.kpc;
+	unsigned psr = engine.psr;
+
+	/* m = machine state $c068 */
+	/* q = quagmire $c035 + $c036 */
+	unsigned M = g_c068_statereg;
+	unsigned Q = (g_c035_shadow_reg & 0x7f) | (g_c036_val_speed & 0x80);
+
+	char ps[9];
+
+	ps[0] = '0' | ((psr >> 7) & 0x01);
+	ps[1] = '0' | ((psr >> 6) & 0x01);
+	ps[2] = '0' | ((psr >> 5) & 0x01);
+	ps[3] = '0' | ((psr >> 4) & 0x01);
+	ps[4] = '0' | ((psr >> 3) & 0x01);
+	ps[5] = '0' | ((psr >> 2) & 0x01);
+	ps[6] = '0' | ((psr >> 1) & 0x01);
+	ps[7] = '0' | ((psr >> 0) & 0x01);
+	ps[8] = 0;
+
+	fputs(" K/PC   B   D    S    A    X    Y    M   Q   L  P  nvmxdizc e\n", stdout);
+
+	printf("%02x/%04x %02x %04x %04x %04x %04x %04x  %02x  %02x  %1x  %02x %s %1x\n",
+		kpc >> 16, kpc & 0xffff,
+		engine.dbank, engine.direct, engine.stack,
+		engine.acc, engine.xreg, engine.yreg,
+		M, Q, M & 0x02 ? 1 : 0,
+		engine.psr & 0xff, ps, psr >> 8
+	);
+
+}
 word32 do_hexdump(word32 address, int lines) {
 	static char hex[] = "0123456789abcdef";
 
@@ -1875,7 +1912,7 @@ static int parse_command(const char *cp) {
 		"bp" eol { show_bp('B'); return 0; }
 		"mp" eol { show_bp('M'); return 0; }
 
-		"*" eol { show_regs(); return 0; }
+		"*" eol { do_registers(); return 0; }
 
 		("q" | "quit" | "exit" | "bye") eol { return 'q'; }
 		"reset" eol { do_reset(); return 0; }
