@@ -2400,6 +2400,7 @@ int debug_shell(int code) {
 	char *cp;
 	int control_d_count = 0;
 	word32 kpc = engine.kpc;
+	int list = 1;
 
 	fflush(stderr);
 	fflush(stdout);
@@ -2421,6 +2422,11 @@ int debug_shell(int code) {
 	}
 
 
+	g_prev_stack_address = engine.stack;
+	g_prev_stack_bank = engine.kpc & 0xff0000;
+	g_prev_address = engine.kpc;
+	g_disasm_psr = engine.psr;
+
 	if (code == RET_BP) {
 
 		/* check for temp. breakpoint */
@@ -2437,6 +2443,46 @@ int debug_shell(int code) {
 		} 
 		printf("%06x: %0*x\n", g_abort_address, g_abort_bytes * 2, g_abort_value);
 	}
+
+	if (code == RET_JSL) {
+		/* toolbox or GS/OS breakpoint */
+		/* special listing. */
+		unsigned bytes[4] = { 0x22, 0, 0, 0 };
+		bytes[1] = (g_abort_address >> 0) & 0xff;
+		bytes[2] = (g_abort_address >> 8) & 0xff;
+		bytes[3] = (g_abort_address >> 16) & 0xff;
+
+		const char *cp = "";
+		char buffer[20];
+
+		if (g_abort_address == 0xe10000) {
+			cp = debug_tool_name(g_abort_value, 0xe10000, 0);
+			if (!cp) {
+				cp = buffer;
+				sprintf(buffer, "Tool $%04x", g_abort_value);
+			}
+		}
+
+		if (g_abort_address == 0xe100a8 || g_abort_address == 0xe100b0) {
+			cp = debug_tool_name(g_abort_value, 0xe100a8, 0);
+			if (!cp) {
+				cp = buffer;
+				sprintf(buffer, "OS $%04x", g_abort_value);
+			}
+
+		}
+
+		printf("%02x/%04x: %02x %02x %02x %02x",
+				kpc >> 16, kpc & 0xffff,
+				bytes[0], bytes[1], bytes[2], bytes[3]);
+
+		fputs("                    ", stdout);
+		fputs(cp, stdout);
+		fputc('\n', stdout);
+
+		list = 0;
+	}
+
 	if (code == RET_BRK || code == RET_COP) {
 		/* hit a BRK op */
 	}
@@ -2446,11 +2492,7 @@ int debug_shell(int code) {
 	}
 
 
-	g_prev_stack_address = engine.stack;
-	g_prev_stack_bank = engine.kpc & 0xff0000;
-	g_prev_address = engine.kpc;
-	g_disasm_psr = engine.psr;
-	do_list(engine.kpc, 1);
+	if (list) do_list(engine.kpc, 1);
 
 	for(;;) {
 		cp = x_readline("] ");
@@ -2480,6 +2522,9 @@ int debug_shell(int code) {
 				break;
 			case RET_BP:
 				engine.flags |= FLAG_IGNORE_BP;
+				break;
+			case RET_JSL:
+				engine.flags |= FLAG_IGNORE_JSL;
 				break;
 		}	
 	}
