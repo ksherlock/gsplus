@@ -173,7 +173,6 @@ void clear_prev_line(void) {
  * - gs/os break support
  * - p8 break support
  * - r -> run to next rts/rtl
- * - " -> search nifty list data file
  * - option to search gs/os loader tables
  */
 
@@ -393,7 +392,7 @@ static void debug_goodies_ids(void) {
 	}
 }
 
-static char *get_pathname(int user_id, int file_num) {
+static const char *get_pathname(int user_id, int file_num) {
 
 	if (!g_loader_loaded)
 		load_loader_names();
@@ -494,7 +493,7 @@ static void do_handle(word32 value, int action) {
 				if (value != size) continue;
 			}
 
-			char *path;
+			const char *path;
 			path = get_pathname(owner, 1);
 			if (!path) path = "";
 			fprintf(stdout, "%06x %06x %06x %04x %04x %s\n",
@@ -843,6 +842,12 @@ word32 do_stack(word32 address, unsigned bank) {
 	 *
 	 * TODO - in Niftylist, JSL updates the bank.
 	 * TODO - don't display c000, etc.
+	 * TODO - warn if stack not in bank 0?
+	 * TODO - if toolbox call (from toolbox breakpoint) it would be
+	 * nice to pretty-print the arguments. know the names/sizes via
+	 * nifty list file. 
+	 *
+	 *
 	 */
 
 	static char hex[] = "0123456789abcdef";
@@ -1667,6 +1672,92 @@ set_psr:
 	printf("disasm psr %03x\n", g_disasm_psr);
 	return 0;
 }
+
+static word32 do_find(word32 addr, const char *cp) {
+
+	enum {
+		buffer_max = 32
+	};
+	unsigned char buffer[32];
+	unsigned char wildcard[32];
+	
+	int buffer_size = 0;
+	int i = 0;
+
+	const char *YYCURSOR = cp;
+	const char *YYMARKER = NULL;
+	const char *YYCTXMARKER = NULL;
+
+	for (;;) {
+		const char *start = YYCURSOR;
+		/*!re2c
+		* {
+			fputs("invalid data\n", stderr);
+			return 0;
+		}
+		ws { continue; }
+		eol { goto ok; }
+
+		"*" {
+			/* wildcard */
+			buffer[i] = 0x00;
+			wildcard[i] = 0x01;
+				++i;
+			if (i >=buffer_max) {
+				fputs("too long\n", stderr);
+				return 0;
+			}
+			continue;
+		}
+		x{1,2} {
+			unsigned v = to_hex(start, YYCURSOR);
+			buffer[i] = v;
+			wildcard[i] = 0x00;
+			++i;
+			if (i >=buffer_max) {
+				fputs("too long\n", stderr);
+				return 0;
+			}
+			continue;
+		}
+		*/
+	}
+ok:
+	buffer_size = i;
+	if (!buffer_size) return 0;
+
+	/* now search all memory for the string.... */
+	extern int get_byte_at_address(int addr);
+
+
+	int map[256];
+	for (int i = 0; 1 < 256; ++i) map[i] = 0;
+	for (int i = 0, m = 1; i < buffer_size; ++i, m <<= 1) {
+		unsigned c = buffer[i];
+		map[c] |= m;
+		if (wildcard[i]) for (int j = 0; j < 256; ++j) map[j] |= m;
+	}
+
+	/* todo -- should take a handle, an id, or a memory range */
+	word32 st = 0;
+	unsigned count = 0;
+	unsigned rv = 0;
+	int success = 1 << (buffer_size-1);
+	for (unsigned i = 0; i < 0x10000; ++i) {
+		unsigned c = get_byte_at_address(i);
+		st = (st << 1) | 1;
+		st &= map[c];
+		if (st & success) {
+			/* match! */
+			rv = i + 1 - buffer_size;
+			++count;
+			do_hexdump(i + 1 - buffer_size, (buffer_size + 15) >> 4);
+		}
+	}
+	return rv;
+
+}
+
 
 static word32 do_mem_assign(word32 addr, const char *cp) {
 	/* "string" -> pokes ASCII chars */
