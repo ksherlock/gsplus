@@ -198,6 +198,107 @@ static const char *gs_basename(const char *cp) {
 }
 
 
+struct handle {
+	word32 handle;
+	word32 address;
+	word32 size;
+	word16 owner;
+	word16 attr;
+};
+
+static struct handle *g_handles = 0;
+static unsigned g_handles_count = 0;
+static unsigned g_handles_loaded = 0;
+
+static int handle_compare(const void *a, const void *b) {
+	const struct handle *aa = a;
+	const struct handle *bb = b;
+
+	int rv = aa->address - bb->address;
+	if (rv == 0) rv = aa->handle - bb->handle;
+	return rv;
+}
+
+static void load_handle_type(word32 address, struct handle **handle_ptr, unsigned *handle_count) {
+
+	enum {
+		offset_address = 0,
+		offset_attr = 4,
+		offset_owner = 6, 
+		offset_size = 8,
+		offset_prev = 12,
+		offset_next = 16 
+	};
+
+	unsigned capacity = 0;
+	unsigned count = 0;
+	struct handle *ptr = 0;
+
+	word32 hh;
+	hh = get_memory24_c(address, 0);
+
+	for(; hh ; hh = get_memory24_c(hh + offset_next, 0)) {
+
+		//printf("%06x\n", hh);
+		unsigned bank = hh >> 16;
+		if (bank != 0xe0 && bank != 0xe1) break;
+
+		struct handle h;
+		h.handle = hh;
+		h.address = get_memory32_c(hh + offset_address, 0);
+		h.size = get_memory24_c(hh + offset_size, 0);
+		h.owner = get_memory16_c(hh + offset_owner, 0);
+		h.attr = get_memory16_c(hh + offset_attr, 0);
+
+
+		if (count >= capacity) {
+			capacity += 1024;
+			struct handle *tmp = realloc(ptr, capacity * sizeof(struct handle));
+			if (!tmp) {
+				free(ptr);
+				return;
+			}
+			ptr = tmp;
+		}
+		ptr[count++] = h;
+	}
+	*handle_count = count;
+	*handle_ptr = ptr;
+}
+
+static void unload_handles(void) {
+	free(g_handles);
+	g_handles = 0;
+	g_handles_count = 0;
+	g_handles_loaded = 0;
+}
+static void load_handles(void) {
+
+	enum {
+		MemList	= 0xe11600,
+		PurgeList = 0xe11604,
+		FreeList = 0xe11608
+	};
+
+	enum {
+		offset_address = 0,
+		offset_attr = 4,
+		offset_owner = 6, 
+		offset_size = 8,
+		offset_prev = 12,
+		offset_next = 16 
+	};
+
+	if (g_handles_loaded) return;
+	g_handles_loaded = 1;
+
+	load_handle_type(MemList, &g_handles, &g_handles_count);
+
+	qsort(g_handles, g_handles_count, sizeof(struct handle), handle_compare);
+
+}
+
+
 struct loader_entry {
 	/* first because they're used for sorting */
 	word16 user_id;
@@ -229,22 +330,9 @@ static int g_loader_loaded = 0;
 static void load_loader_names(void) {
 
 	enum {
-		MemList	= 0xe11600,
-		PurgeList = 0xe11604,
-		FreeList = 0xe11608,
-
 		OSKind = 0xe100bc,
 
 		reserved = 256
-	};
-
-	enum {
-		offset_address = 0,
-		offset_attr = 4,
-		offset_owner = 6, 
-		offset_size = 8,
-		offset_prev = 12,
-		offset_next = 16 
 	};
 
 
@@ -253,18 +341,20 @@ static void load_loader_names(void) {
 	if (g_loader_loaded) return;
 	g_loader_loaded = 1;
 
-	g_loader_names_count = 0;
-	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
+	if (!g_handles_loaded) load_handles();
+
 	if (get_memory_c(OSKind, 0) != 1) return;
 
-	/* load the express load table */
-	word32 handle = get_memory24_c(MemList, 0);
-	for(; handle ; handle = get_memory24_c(handle + offset_next, 0)) {
+	g_loader_names_count = 0;
+	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
 
-		word32 address = get_memory24_c(handle + offset_address, 0);
-		word32 size = get_memory24_c(handle + offset_size, 0);
-		unsigned owner = get_memory16_c(handle + offset_owner, 0);
-		//unsigned attr = get_memory16_c(handle + offset_attr, 0);
+	/* load the express load table */
+	for (unsigned i = 0; i < g_handles_count; ++i) {
+
+		word32 address = g_handles[i].address;
+		word32 size = g_handles[i].size;
+		unsigned owner = g_handles[i].owner;
+		//unsigned attr = g_handles[i].attr;
 
 		if (!address) continue;
 
@@ -425,27 +515,17 @@ static const char *get_pathname(int user_id, int file_num) {
 	return "???";
 }
 
+
+
 static void do_handle(word32 value, int action) {
 	/* action = I)nfo, W)who, H)handle s)\hsize
 	 */
 
-	enum {
-		MemList	= 0xe11600,
-		PurgeList = 0xe11604,
-		FreeList = 0xe11608
-	};
-
-	enum {
-		offset_address = 0,
-		offset_attr = 4,
-		offset_owner = 6, 
-		offset_size = 8,
-		offset_prev = 12,
-		offset_next = 16 
-	};
 
 	unsigned mask = 0;
 	unsigned count = 0;
+
+	if (!g_handles_loaded) load_handles();
 
 	/* return information on who owns an address. */
 	/* Nifty list can get info from the GS/OS... we can't */
@@ -463,49 +543,40 @@ static void do_handle(word32 value, int action) {
 		if (value & 0x000f) mask |= 0x000f;
 	}
 
-	for (unsigned i = 0; i < 2; ++i) {
+	for (unsigned i = 0; i < g_handles_count; ++i) {
 
-		word32 handle;
-		handle = get_memory24_c(i == 0 ? MemList : PurgeList, 0);
-
-		for(; handle ; handle = get_memory24_c(handle + offset_next, 0)) {
-
-			word32 address = get_memory32_c(handle + offset_address, 0);
-			word32 size = get_memory24_c(handle + offset_size, 0);
-			unsigned owner = get_memory16_c(handle + offset_owner, 0);
-			unsigned attr = get_memory16_c(handle + offset_attr, 0);
+		word32 hh = g_handles[i].handle;
+		word32 address = g_handles[i].address;
+		word32 size = g_handles[i].size;
+		unsigned owner = g_handles[i].owner;
+		unsigned attr = g_handles[i].attr;
 
 			/* size not 32-bit clean.  may be $ffxxxxxx */
 
-			if (action == 'w') {
-				if (value < address || value >= address + size) continue;
-			}
-
-			if (action == 'i') {
-				if ((owner & mask) != value) continue;
-			}
-
-			if (action == 'h') {
-				if (value != handle) continue;
-			}
-
-			if (action == 's') {
-				if (value != size) continue;
-			}
-
-			const char *path;
-			path = get_pathname(owner, 1);
-			if (!path) path = "";
-			fprintf(stdout, "%06x %06x %06x %04x %04x %s\n",
-				handle, address, size, attr, owner, path
-			);
-			++count;
-			if (action == 'w' || action == 'h') break;
+		if (action == 'w') {
+			if (value < address || value >= address + size) continue;
 		}
 
-		if (action == 'w') break;
-		if (action == 's') break;
-		if (action == 'h' && handle) break;
+		if (action == 'i') {
+			if ((owner & mask) != value) continue;
+		}
+
+		if (action == 'h') {
+			if (value != hh) continue;
+		}
+
+		if (action == 's') {
+			if (value != size) continue;
+		}
+
+		const char *path;
+		path = get_pathname(owner, 1);
+		if (!path) path = "";
+		fprintf(stdout, "%06x %06x %06x %04x %04x %s\n",
+			hh, address, size, attr, owner, path
+		);
+		++count;
+		if (action == 'w' || action == 'h') break;
 	}
 
 
@@ -2667,8 +2738,9 @@ void do_go() {
   g_config_control_panel = 1;
   if (g_dbg_shell) {
   	ok = debug_shell(0);
+  	dispose_loader_names();
+  	unload_handles();
   	if (!ok) {
-      	dispose_loader_names();
   		return;
   	}
   }
@@ -2684,8 +2756,9 @@ void do_go() {
     if (ret || g_stepping) {
       g_config_control_panel = 1;
       ok = debug_shell(ret);
+      dispose_loader_names();
+      unload_handles();
       if (!ok) {
-      	dispose_loader_names();
       	return;
       }
       g_config_control_panel = 0;
