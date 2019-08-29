@@ -2471,7 +2471,7 @@ command:
 		}
 
 		"\\hsize" eol {
-			if (!has_addr) addr &= 0xffff;
+			if (!has_bank) addr &= 0xffff;
 			do_handle(addr, 's');
 			return 0;
 		}
