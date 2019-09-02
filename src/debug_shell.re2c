@@ -207,7 +207,7 @@ struct handle {
 };
 
 static struct handle *g_handles = 0;
-static unsigned g_handles_count = 0;
+static unsigned g_num_handles = 0;
 static unsigned g_handles_loaded = 0;
 
 static int handle_compare(const void *a, const void *b) {
@@ -270,7 +270,7 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 static void unload_handles(void) {
 	free(g_handles);
 	g_handles = 0;
-	g_handles_count = 0;
+	g_num_handles = 0;
 	g_handles_loaded = 0;
 }
 static void load_handles(void) {
@@ -293,9 +293,9 @@ static void load_handles(void) {
 	if (g_handles_loaded) return;
 	g_handles_loaded = 1;
 
-	load_handle_type(MemList, &g_handles, &g_handles_count);
+	load_handle_type(MemList, &g_handles, &g_num_handles);
 
-	qsort(g_handles, g_handles_count, sizeof(struct handle), handle_compare);
+	qsort(g_handles, g_num_handles, sizeof(struct handle), handle_compare);
 
 }
 
@@ -350,7 +350,7 @@ static void load_loader_names(void) {
 	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
 
 	/* load the express load table */
-	for (unsigned i = 0; i < g_handles_count; ++i) {
+	for (unsigned i = 0; i < g_num_handles; ++i) {
 
 		word32 address = g_handles[i].address;
 		word32 size = g_handles[i].size;
@@ -544,7 +544,7 @@ static void do_handle(word32 value, int action) {
 		if (value & 0x000f) mask |= 0x000f;
 	}
 
-	for (unsigned i = 0; i < g_handles_count; ++i) {
+	for (unsigned i = 0; i < g_num_handles; ++i) {
 
 		word32 hh = g_handles[i].handle;
 		word32 address = g_handles[i].address;
