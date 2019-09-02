@@ -231,6 +231,10 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 		offset_next = 16 
 	};
 
+	enum {
+		growth_factor = 1024
+	};
+
 	unsigned capacity = 0;
 	unsigned count = 0;
 	struct handle *ptr = 0;
@@ -253,12 +257,13 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 
 
 		if (count >= capacity) {
-			capacity += 1024;
+			capacity += growth_factor;
 			struct handle *tmp = realloc(ptr, capacity * sizeof(struct handle));
 			if (!tmp) {
 				free(ptr);
 				return;
 			}
+			memset(&tmp[count], 0, growth_factor * sizeof(tmp[0]));
 			ptr = tmp;
 		}
 		ptr[count++] = h;
@@ -303,6 +308,15 @@ struct loader_entry {
 	char *path;
 };
 
+struct segment_entry {
+	word16 user_id;
+	word16 file_num;
+	word16 seg_num;
+	word16 kind;
+	word32 handle;
+};
+
+
 static int loader_entry_compare(const void *a, const void *b) {
 	const struct loader_entry *aa = a;
 	const struct loader_entry *bb = b;
@@ -315,8 +329,8 @@ static int loader_entry_compare(const void *a, const void *b) {
 	return 0;
 }
 
-static struct loader_entry *g_loader_names = NULL;
-static int g_loader_names_count = 0;
+static struct loader_entry *g_loader_entries = NULL;
+static int g_num_loader_entries = 0;
 static int g_loader_loaded = 0;
 
 static void load_loader_names(void) {
@@ -324,11 +338,15 @@ static void load_loader_names(void) {
 	enum {
 		OSKind = 0xe100bc,
 
-		reserved = 256
 	};
 
+	enum {
+		growth_factor = 256
+	};
 
+	unsigned capacity = 0;
 	unsigned count = 0;
+	struct loader_entry *ptr = NULL;
 
 	if (g_loader_loaded) return;
 	g_loader_loaded = 1;
@@ -337,8 +355,7 @@ static void load_loader_names(void) {
 
 	if (get_memory_c(OSKind, 0) != 1) return;
 
-	g_loader_names_count = 0;
-	g_loader_names = calloc(reserved, sizeof(struct loader_entry));
+
 
 	/* load the express load table */
 	for (unsigned i = 0; i < g_num_handles; ++i) {
@@ -349,6 +366,19 @@ static void load_loader_names(void) {
 		//unsigned attr = g_handles[i].attr;
 
 		if (!address) continue;
+
+
+		if (count >= capacity) {
+			capacity += growth_factor;
+			
+			struct loader_entry *tmp = realloc(ptr, capacity * sizeof(struct loader_entry));
+			if (!tmp) {
+				free(ptr);
+				return;
+			}
+			memset(&tmp[count], 0, growth_factor * sizeof(tmp[0]));
+			ptr = tmp;
+		}
 
 		if (owner == 0x7201 && size == 2048) {
 			/* expressload table */
@@ -367,14 +397,15 @@ static void load_loader_names(void) {
 				word32 h = get_memory32_c(ea + offset_express_handle, 0);
 				if (!h || !id) continue;
 
-				g_loader_names[count].user_id = id;
-				g_loader_names[count].express_handle = h;
-				g_loader_names[count].stack = get_memory16_c(ea + offset_stack, 0);
-				g_loader_names[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
-				g_loader_names[count].address = get_memory32_c(ea + offset_address, 0);
-				g_loader_names[count].file_num = 1;
 
-				if (++count >= reserved) break;
+				ptr[count].user_id = id;
+				ptr[count].express_handle = h;
+				ptr[count].stack = get_memory16_c(ea + offset_stack, 0);
+				ptr[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
+				ptr[count].address = get_memory32_c(ea + offset_address, 0);
+				ptr[count].file_num = 1;
+
+				++count;
 			}
 		}
 		if (owner == 0x7004 && size > 32) {
@@ -390,20 +421,21 @@ static void load_loader_names(void) {
 			};
 
 			unsigned ea = address;
-			g_loader_names[count].user_id = get_memory16_c(ea + offset_user_id, 0);
-			g_loader_names[count].file_num = get_memory16_c(ea + offset_file_num, 0);
-			g_loader_names[count].stack = get_memory16_c(ea + offset_stack, 0);
-			g_loader_names[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
-			g_loader_names[count].address = get_memory16_c(ea + offset_address, 0);
+			ptr[count].user_id = get_memory16_c(ea + offset_user_id, 0);
+			ptr[count].express_handle = 0;
+			ptr[count].file_num = get_memory16_c(ea + offset_file_num, 0);
+			ptr[count].stack = get_memory16_c(ea + offset_stack, 0);
+			ptr[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
+			ptr[count].address = get_memory16_c(ea + offset_address, 0);
 
 			/* load the pathname now... */
 			unsigned psize = get_memory16_c(ea + offset_path, 0);
 			if (offset_path + 2 + psize > size) continue; /* oops */
 			char *cp = gs_to_cstr(ea + offset_path);
 			if (!cp) continue;
-			g_loader_names[count].path = cp;
+			ptr[count].path = cp;
 
-			if (++count >= reserved) break;
+			++count;
 		}
 
 		if (owner == 0x7003 && size == 20) {
@@ -417,26 +449,25 @@ static void load_loader_names(void) {
 			};
 
 		}
-
-		if (count >= reserved) break;
 	}
 
 
-	g_loader_names_count = count;
+	g_loader_entries = ptr;
+	g_num_loader_entries = count;
 
-	qsort(g_loader_names, count, sizeof(struct loader_entry), loader_entry_compare);
+	qsort(g_loader_entries, g_num_loader_entries, sizeof(struct loader_entry), loader_entry_compare);
 
 }
 
 static void dispose_loader_names(void) {
-	if (!g_loader_names) return;
-	for (int i = 0; i < g_loader_names_count; ++i) {
-		if (g_loader_names[i].path)
-			free(g_loader_names[i].path);
+	if (!g_loader_entries) return;
+	for (int i = 0; i < g_num_loader_entries; ++i) {
+		if (g_loader_entries[i].path)
+			free(g_loader_entries[i].path);
 	}
-	free(g_loader_names);
-	g_loader_names = NULL;
-	g_loader_names_count = 0;
+	free(g_loader_entries);
+	g_loader_entries = NULL;
+	g_num_loader_entries = 0;
 	g_loader_loaded = 0;
 }
 
@@ -462,9 +493,9 @@ static void debug_goodies_ids(void) {
 		"----  --------\n",
 		stdout
 	);
-	struct loader_entry *e = g_loader_names;
+	struct loader_entry *e = g_loader_entries;
 	unsigned prev = 0;
-	for (int i = 0; i < g_loader_names_count; ++i, ++e) {
+	for (int i = 0; i < g_num_loader_entries; ++i, ++e) {
 		if (prev != e->user_id) {
 			char *cp = loader_load_path(e);
 			if (cp)
@@ -479,10 +510,10 @@ static const char *get_pathname(int user_id, int file_num) {
 	if (!g_loader_loaded)
 		load_loader_names();
 
-	if (!g_loader_names) return NULL;
+	if (!g_loader_entries) return NULL;
 
 	struct loader_entry tmp = { user_id & 0xf0ff, file_num };
-	struct loader_entry *e = bsearch(&tmp, g_loader_names, g_loader_names_count, sizeof(struct loader_entry), loader_entry_compare);
+	struct loader_entry *e = bsearch(&tmp, g_loader_entries, g_num_loader_entries, sizeof(struct loader_entry), loader_entry_compare);
 	if (!e) {
 		switch (user_id >> 12) {
 			case 0x0: return "(memory manager)";
