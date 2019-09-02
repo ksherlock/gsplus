@@ -214,9 +214,10 @@ static int handle_compare(const void *a, const void *b) {
 	const struct handle *aa = a;
 	const struct handle *bb = b;
 
-	int rv = aa->address - bb->address;
-	if (rv == 0) rv = aa->handle - bb->handle;
-	return rv;
+	// int rv = aa->address - bb->address;
+	// if (rv == 0) rv = aa->handle - bb->handle;
+	// return rv;
+	return (int)aa->handle - (int)bb->handle;
 }
 
 static void load_handle_type(word32 address, struct handle **handle_ptr, unsigned *handle_count) {
