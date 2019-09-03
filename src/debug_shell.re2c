@@ -460,7 +460,7 @@ static void load_segments(void) {
 			ptr[count].file_num = 1; /* constant */
 			ptr[count].handle = hh;
 			ptr[count].seg_num = get_memory16_c(ea_seg_num_table + i * 2, 0);
-			ptr[count].kind = get_memory16_c(address + offset_seg_entry + offset + offset_omf_kind, 0);
+			ptr[count].kind = get_memory16_c(ea + offset + offset_omf_kind, 0);
 
 			++count;
 		}
