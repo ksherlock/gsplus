@@ -457,7 +457,7 @@ static void load_segments(void) {
 			unsigned hh = get_memory24_c(ea + offset_seg_handle, 0);
 
 			ptr[count].user_id = user_id;
-			ptr[count].file_num = 1; /* constant */
+			ptr[count].file_num = 1; /* express load doesn't support multiple files */
 			ptr[count].handle = hh;
 			ptr[count].seg_num = get_memory16_c(ea_seg_num_table + i * 2, 0);
 			ptr[count].kind = get_memory16_c(ea + offset + offset_omf_kind, 0);
