@@ -2474,7 +2474,7 @@ static int parse_command(const char *cp) {
 			addr = engine.kpc;
 			has_addr = 1;
 			has_bank = 1;
-			goto indir;
+			goto offset;
 		}
 		"%a" {
 			addr = engine.acc;
@@ -2498,16 +2498,14 @@ static int parse_command(const char *cp) {
 			addr = engine.stack;
 			has_addr = 1;
 			has_bank = 1;
-			goto indir;
+			goto offset;
 		}
 		"%d" {
 			addr = engine.direct;
 			has_addr = 1;
 			has_bank = 1;
-			goto indir;
+			goto offset;
 		}
-
-
 
 		x{6} {
 			addr = to_hex(cp, cp + 6);
@@ -2528,6 +2526,26 @@ static int parse_command(const char *cp) {
 			has_addr = 1;
 			goto indir;
 		}
+	*/
+offset:
+	cp = YYCURSOR;
+	/*!re2c 
+	"" { goto indir; }
+	"+" x{1,4} {
+		unsigned tmp = addr + to_hex(cp+1, YYCURSOR);
+		tmp &= 0xffff;
+		addr &= 0xff0000;
+		addr |= tmp;
+		goto indir;
+	}
+	"-" x{1,4} {
+		unsigned tmp = addr - to_hex(cp+1, YYCURSOR);
+		tmp &= 0xffff;
+		addr &= 0xff0000;
+		addr |= tmp;
+		goto indir;
+	}
+
 	*/
 indir:
 	cp = YYCURSOR;
