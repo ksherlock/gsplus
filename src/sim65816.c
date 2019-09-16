@@ -2363,6 +2363,7 @@ static void wdm_print() {
 			break;
 	}
 	if (type & 0x8000) fputc('\n', stdout);
+	fflush(stdout);
 }
 
 static void wdm_hexdump() {
@@ -2399,6 +2400,7 @@ static void wdm_hexdump() {
 			address += xx;
 		}
 	}
+	fflush(stdout);
 }
 extern void host_mli_head(void);
 extern void host_mli_tail(void);
