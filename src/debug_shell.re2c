@@ -2124,45 +2124,21 @@ static int addr_cmp(const void *a, const void *b) {
 
 
 
-void show_bp(int type) {
-	int i;
-	word32 addr;
-	word32 *breakpoints;
-	int num_breakpoints;
-
-	switch(type) {
-		case 'B':
-			breakpoints = g_bp_breakpoints;
-			num_breakpoints = g_num_bp_breakpoints;
-			break;
-		case 'M':
-			breakpoints = g_mp_breakpoints;
-			num_breakpoints = g_num_mp_breakpoints;
-			break;
-
-		case 'T':
-			breakpoints = g_tp_breakpoints;
-			num_breakpoints = g_num_tp_breakpoints;
-			break;
 
 
-		default:
-			fputs("Invalid breakpoint type\n", stderr);
-			return;
-	}
+static int bp(int type, int clear, word32 addr) {
 
-	fputs("Breakpoints:\n", stdout);
-	for (i = 0; i < num_breakpoints; ++i) {
-		addr = breakpoints[i];
-		printf("%02x/%04x\n", addr >> 16, addr & 0xffff);
-	}
-}
+	/*
+	 *
+	 * \brk - list all breaks
+	 * xxxx\brk - add break
+	 * \clrbrk - remove all breaks
+	 *
+	 *
+	 */
 
-int set_bp(int type, word32 addr) {
-	int i;
-
-	word32 *breakpoints;
-	int num_breakpoints;
+	word32 *breakpoints = 0;
+	int num_breakpoints = 0;
 
 	switch(type) {
 		case 'B':
@@ -2179,76 +2155,70 @@ int set_bp(int type, word32 addr) {
 			break;
 
 		default:
-			fputs("Invalid breakpoint type\n", stderr);
 			return 0;
 	}
 
-	for (i = 0; i < num_breakpoints; ++i) {
-		if (breakpoints[i] == addr) break;
+
+	if (!addr) {
+
+		if (clear) {
+			num_breakpoints = 0;
+			goto update;
+		}
+
+		fputs("Breakpoints:\n", stdout);
+		for (int i = 0; i < num_breakpoints; ++i) {
+			unsigned x = breakpoints[i];
+			printf("%02x/%04x\n", x >> 16, x & 0xffff);
+		}
+		return 0;
 	}
 
-	if (i < num_breakpoints) return 1; /* already set */
+
+	addr &= 0xffffff;
+	/* check if already in table... */
+	int ix = 0;
+	for (ix = 0; ix < num_breakpoints; ++ix) {
+		if (breakpoints[ix] == addr) break;
+	}
+
+	if (clear) {
+		if (ix == num_breakpoints) return 0;
+		breakpoints[ix] = breakpoints[--num_breakpoints];
+		goto update;
+	}
+
+	if (ix < num_breakpoints) return 1; /* already set */
 	if (num_breakpoints == MAX_BREAK_POINTS) {
-		printf("Too many breakpoints.\n");
 		return 0;
 	}
 	breakpoints[num_breakpoints++] = addr;
 
+update:
+	qsort(breakpoints, num_breakpoints, sizeof(word32), addr_cmp);
+
 	switch(type) {
 		case 'B': g_num_bp_breakpoints = num_breakpoints; break;
 		case 'M': g_num_mp_breakpoints = num_breakpoints; break;
 		case 'T': g_num_tp_breakpoints = num_breakpoints; break;
 	}
-
-	qsort(breakpoints, num_breakpoints, sizeof(word32), addr_cmp);
 	fixup_brks();
 	return 1;
+}
+
+int set_bp(int type, word32 addr) {
+	return bp(type, 0, addr | 0x80000000);
+}
+
+void list_bp(int type) {
+	bp(type, 0, 0);
 }
 
 /* returns 1 if address deleted */
 int delete_bp(int type, word32 addr) {
-	int i;
-
-	word32 *breakpoints;
-	int num_breakpoints;
-
-	switch(type) {
-		case 'B':
-			breakpoints = g_bp_breakpoints;
-			num_breakpoints = g_num_bp_breakpoints;
-			break;
-		case 'M':
-			breakpoints = g_mp_breakpoints;
-			num_breakpoints = g_num_mp_breakpoints;
-			break;
-		case 'T':
-			breakpoints = g_tp_breakpoints;
-			num_breakpoints = g_num_tp_breakpoints;
-			break;
-
-		default:
-			fputs("Invalid breakpoint type\n", stderr);
-			return 0;
-	}
-
-	for (i = 0; i < num_breakpoints; ++i) {
-		if (breakpoints[i] == addr) break;
-	}
-
-	if (i == num_breakpoints) return 0; /* not set */
-	breakpoints[i] = 0;
-	breakpoints[i] = breakpoints[--num_breakpoints]; 
-
-	switch(type) {
-		case 'B': g_num_bp_breakpoints = num_breakpoints; break;
-		case 'M': g_num_mp_breakpoints = num_breakpoints; break;
-		case 'T': g_num_tp_breakpoints = num_breakpoints; break;
-	}
-
-	qsort(breakpoints, num_breakpoints, sizeof(word32), addr_cmp);
-	fixup_brks();
-	return 1;
+	return bp(type, 1, addr | 0x80000000);
 }
+
 
 
 static int tbrk(int type, int clear, word32 num, const char *cp) {
@@ -2421,8 +2391,6 @@ static int parse_command(const char *cp) {
 
 		* { --YYCURSOR; if (cp == YYCURSOR) goto command; return -1; }
 
-		"bp" eol { show_bp('B'); return 0; }
-		"mp" eol { show_bp('M'); return 0; }
 
 		"*" eol { do_registers(); return 0; }
 
@@ -2665,23 +2633,45 @@ command:
 			return 1;
 		}
 
-		";bp" [+-]? eol {
-			char plus = cp[3];
-			if (!has_addr && plus == 0) { show_bp('B'); return 0; }
-			if (!has_addr) return -1;
-			if (plus == '-') delete_bp('B', addr);
-			else set_bp('B', addr);
+
+
+		"\\brk" eol {
+			/* xxx\brk -> set breakpoint */
+			/* \brk -> list breakpoints */
+			if (has_addr) addr |= 0x80000000;
+			else addr = 0;
+			bp('B', 0, addr);
+			return 0;
+		}
+		"\\mbrk" eol {
+			/* xxx\brk -> set breakpoint */
+			/* \brk -> list breakpoints */
+			if (has_addr) addr |= 0x80000000;
+			else addr = 0;
+			bp('M', 0, addr);
 			return 0;
 		}
 
-		";mp" [+-]? eol {
-			char plus = cp[3];
-			if (!has_addr && plus == 0) { show_bp('M'); return 0; }
-			if (!has_addr) return -1;
-			if (plus == '-') delete_bp('M', addr);
-			else set_bp('M', addr);
+
+		"\\clrbrk" eol {
+			/* xxx\brk -> set breakpoint */
+			/* \brk -> list breakpoints */
+			if (has_addr) addr |= 0x80000000;
+			else addr = 0;
+			bp('B', 1, addr);
 			return 0;
-		}
+		}		
+		"\\clrmbrk" eol {
+			/* xxx\brk -> set breakpoint */
+			/* \brk -> list breakpoints */
+			if (has_addr) addr |= 0x80000000;
+			else addr = 0;
+			bp('M', 1, addr);
+			return 0;
+		}	
+
+
+
 		"\\tbrk" / (ws|eol) {
 			while (isspace(*YYCURSOR)) ++YYCURSOR;
 			if (has_addr) addr |= 0x010000;
