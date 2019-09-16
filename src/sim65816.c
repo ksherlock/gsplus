@@ -1512,18 +1512,6 @@ int run_prog()      {
       halt_sim &= ~HALT_EVENT;
     }
 
-#if 0
-    if(!g_testing && run_cycles < -2000000) {
-      halt_printf("run_cycles: %d, cycles: %d\n", run_cycles,
-                  cycles);
-      printf("this_type: %05x\n", this_type);
-      printf("duff_cycles: %d\n", duff_cycles);
-      printf("start.next->rel_time: %d, type: %05x\n",
-             g_event_start.next->rel_time,
-             g_event_start.next->type);
-    }
-#endif
-
     this_event = g_event_start.next;
     while(dcycs >= this_event->dcycs) {
       if(halt_sim & ~HALT_EVENT) {
@@ -1618,11 +1606,6 @@ int run_prog()      {
 
   }
 
-#if 0
-  if(!g_testing) {
-    printf("leaving run_prog, halt_sim:%d\n", halt_sim);
-  }
-#endif
 
   x_auto_repeat_on(0);
 

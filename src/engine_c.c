@@ -1121,11 +1121,6 @@ int enter_engine(Engine_reg *engine_ptr)     {
 recalc_accsize:
   if(psr & 0x20) {
     while(fcycles <= g_fcycles_stop) {
-#if 0
-      if((neg & ~1) || (psr & (~0x1ff))) {
-        halt_printf("psr = %04x\n", psr);
-      }
-#endif
 
       FETCH_OPCODE;
 
