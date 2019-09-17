@@ -1052,6 +1052,7 @@ static void do_text(void) {
 
 static word32 format_operand(char *buffer, word32 address, unsigned mode, unsigned args, unsigned operand);
 
+#if defined(GSPLUS_BACKTRACE)
 static void backtrace_helper(Pc_log *ptr) {
 
 	if (ptr->dbank_kpc == 0 && ptr->instr == 0) return;
@@ -1139,6 +1140,7 @@ static void backtrace(void) {
 		backtrace_helper(&g_pc_log[i]);
 	}
 }
+#endif
 
 static const char *check_stack_rts(word32 address, unsigned bank, char *buffer, int *n) {
 	word32 rt;
@@ -2973,6 +2975,15 @@ command:
 
 		"\\omf" eol {
 			do_omf(explicit_address & 0xffff);
+			return 0;
+		}
+
+		"\\bt" eol {
+			#if defined(GSPLUS_BACKTRACE)
+			backtrace();
+			#else
+			fputs("\\bt not enabled in this build.\n", stderr);
+			#endif
 			return 0;
 		}
 
