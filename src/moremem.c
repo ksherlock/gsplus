@@ -1166,7 +1166,7 @@ void show_bankptrs(int bnk)      {
 
 
 // function to get the pointer to memory where a gs page is located - db
-unsigned char * get_page_ptr_rd(int addr) {
+static unsigned char * get_page_ptr_rd(int addr) {
   Pg_info rd;
   byte *ptr_rd;
 
@@ -1194,6 +1194,50 @@ void set_byte_at_address(int addr, int value) {
   int offset = addr & 0xff;
   page_ptr_rd[offset] = value;
 
+}
+
+const unsigned char *debug_read_page(word32 address) {
+
+  address = (address >> 8) & 0xffff;
+  return (uint8_t *)GET_PAGE_INFO_RD(address);
+}
+
+/* debug routines.  does not invoke the i/o machinery */
+uint8_t debug_read_8(uint32_t address) {
+  const uint8_t *page_ptr_rd = debug_read_page(address);
+  unsigned offset = address & 0xff;
+  return page_ptr_rd[offset];
+}
+
+uint16_t debug_read_16(uint32_t address) {
+  unsigned offset = address & 0xff;
+  if (offset <= 0xfe) {
+    const uint8_t *page_ptr_rd = debug_read_page(address);
+    return page_ptr_rd[offset+0] | (page_ptr_rd[offset+1] << 8);
+  }
+  return debug_read_8(address+0) | (debug_read_8(address+1) << 8);
+}
+
+uint32_t debug_read_24(uint32_t address) {
+  unsigned offset = address & 0xff;
+  if (offset <= 0xfd) {
+    const uint8_t *page_ptr_rd = debug_read_page(address);
+    return page_ptr_rd[offset+0] | (page_ptr_rd[offset+1] << 8)
+      | (page_ptr_rd[offset+2] << 16);
+  }
+  return debug_read_8(address+0) | (debug_read_8(address+1) << 8)
+    | (debug_read_8(address+2) << 16);
+}
+
+uint32_t debug_read_32(uint32_t address) {
+  unsigned offset = address & 0xff;
+  if (offset <= 0xfc) {
+    const uint8_t *page_ptr_rd = debug_read_page(address);
+    return page_ptr_rd[offset+0] | (page_ptr_rd[offset+1] << 8)
+      | (page_ptr_rd[offset+2] << 16) | (page_ptr_rd[offset+3] << 24);
+  }
+  return debug_read_8(address+0) | (debug_read_8(address+1) << 8)
+    | (debug_read_8(address+2) << 16) | (debug_read_8(address+3) << 24);
 }
 
 

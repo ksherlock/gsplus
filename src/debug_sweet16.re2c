@@ -6,6 +6,7 @@
 
 #include "defc.h"
 
+#include "debug_shell.h"
 
 enum modes {
 	none = 0,
@@ -203,7 +204,7 @@ uint32_t sweet16_disasm(uint32_t addr, int lines) {
 	while (lines--) {
 		unsigned size = 0;
 		uint32_t pc = addr;
-		op = get_memory_c(addr++, 0);
+		op = debug_read_8(addr++);
 		bytes[size++] = op;
 
 		switch (op >> 4) {
@@ -251,13 +252,13 @@ uint32_t sweet16_disasm(uint32_t addr, int lines) {
 			case indir_reg:
 				break;
 			case relative:
-				operand = (int8_t)get_memory_c(addr++, 0);
+				operand = (int8_t)debug_read_8(addr++);
 				bytes[size++] = operand;
 				operand += addr;
 				operand &= 0xffff;
 				break;
 			case reg_imm:
-				operand = get_memory16_c(addr, 0);
+				operand = debug_read_16(addr);
 				addr += 2;
 				bytes[size++] = operand & 0xff;
 				bytes[size++] = operand >> 8;
@@ -383,9 +384,6 @@ int parse_line(const char *cp, uint32_t *pc) {
 }
 
 
-
-
-extern char *x_readline(const char *prompt);
 
 
 uint32_t sweet16_asm_shell(uint32_t addr) {

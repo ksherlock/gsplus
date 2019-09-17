@@ -16,7 +16,7 @@
 #include "disasm.h"
 
 
-extern char *x_readline(const char *prompt);
+#include "debug_shell.h"
 
 extern int g_fullscreen;
 extern int g_config_control_panel;
@@ -55,21 +55,7 @@ static word32 g_prev_stack_bank = 0;
 
 
 static int g_templates_loaded = 0;
-extern void debug_load_templates(const char *path);
-extern word32 debug_apply_template(word32 address, const char *name);
-extern void debug_load_nifty(const char *path);
-extern const char *debug_tool_name(unsigned number, unsigned vector, unsigned full);
 
-
-/* "goodies" module.  implemented in debug_template.re2c */
-int debug_goodies_err(unsigned number);
-int debug_goodies_rtype(unsigned number);
-int debug_goodies_p8(unsigned number);
-int debug_goodies_os(unsigned number);
-int debug_goodies_00(unsigned number);
-int debug_goodies_01(unsigned number);
-int debug_goodies_e0(unsigned number);
-int debug_goodies_e1(unsigned number);
 
 
 
@@ -178,13 +164,13 @@ void clear_prev_line(void) {
 
 
 static char *gs_to_cstr(word32 address) {
-	unsigned size = get_memory16_c(address, 0);
+	unsigned size = debug_read_16(address);
 	char *cp;
 
 	cp = malloc(size + 1);
 	if (cp) {
 		for (unsigned i = 0; i < size; ++i) {
-			cp[i] = get_memory16_c(address + 2 + i, 0);
+			cp[i] = debug_read_16(address + 2 + i);
 		}
 		cp[size] = 0;
 	}
@@ -240,9 +226,9 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 	struct handle *ptr = 0;
 
 	word32 hh;
-	hh = get_memory24_c(address, 0);
+	hh = debug_read_24(address);
 
-	for(; hh ; hh = get_memory24_c(hh + offset_next, 0)) {
+	for(; hh ; hh = debug_read_24(hh + offset_next)) {
 
 		//printf("%06x\n", hh);
 		unsigned bank = hh >> 16;
@@ -250,10 +236,10 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 
 		struct handle h;
 		h.handle = hh;
-		h.address = get_memory32_c(hh + offset_address, 0);
-		h.size = get_memory24_c(hh + offset_size, 0);
-		h.owner = get_memory16_c(hh + offset_owner, 0);
-		h.attr = get_memory16_c(hh + offset_attr, 0);
+		h.address = debug_read_32(hh + offset_address);
+		h.size = debug_read_24(hh + offset_size);
+		h.owner = debug_read_16(hh + offset_owner);
+		h.attr = debug_read_16(hh + offset_attr);
 
 
 		if (count >= capacity) {
@@ -395,11 +381,11 @@ static void load_segments(void) {
 			ptr = tmp;
 		}
 
-		ptr[count].user_id = get_memory16_c(address + offset_user_id, 0);
-		ptr[count].file_num = get_memory16_c(address + offset_file_num, 0);
-		ptr[count].seg_num = get_memory16_c(address + offset_seg_num, 0);
-		ptr[count].kind = get_memory16_c(address + offset_kind, 0);
-		ptr[count].handle = get_memory24_c(address + offset_handle, 0);
+		ptr[count].user_id = debug_read_16(address + offset_user_id);
+		ptr[count].file_num = debug_read_16(address + offset_file_num);
+		ptr[count].seg_num = debug_read_16(address + offset_seg_num);
+		ptr[count].kind = debug_read_16(address + offset_kind);
+		ptr[count].handle = debug_read_24(address + offset_handle);
 		++count;
 	}
 
@@ -432,8 +418,8 @@ static void load_segments(void) {
 		if (!express_handle) continue;
 
 
-		word32 address = get_memory24_c(express_handle, 0);
-		unsigned seg_count = get_memory16_c(address + offset_seg_count, 0) + 1;
+		word32 address = debug_read_24(express_handle);
+		unsigned seg_count = debug_read_16(address + offset_seg_count) + 1;
 
 		if (count + seg_count >= capacity) {
 			capacity += growth_factor;
@@ -452,15 +438,15 @@ static void load_segments(void) {
 		word32 ea_seg_num_table = address + offset_seg_entry + 8 * seg_count;
 
 		for (unsigned i = 0; i < seg_count; ++i, ea += 8) {
-			unsigned offset = get_memory16_c(ea + offset_seg_offset, 0);
-			unsigned flags = get_memory16_c(ea + offset_seg_flags, 0);
-			unsigned hh = get_memory24_c(ea + offset_seg_handle, 0);
+			unsigned offset = debug_read_16(ea + offset_seg_offset);
+			unsigned flags = debug_read_16(ea + offset_seg_flags);
+			unsigned hh = debug_read_24(ea + offset_seg_handle);
 
 			ptr[count].user_id = user_id;
 			ptr[count].file_num = 1; /* express load doesn't support multiple files */
 			ptr[count].handle = hh;
-			ptr[count].seg_num = get_memory16_c(ea_seg_num_table + i * 2, 0);
-			ptr[count].kind = get_memory16_c(ea + offset + offset_omf_kind, 0);
+			ptr[count].seg_num = debug_read_16(ea_seg_num_table + i * 2);
+			ptr[count].kind = debug_read_16(ea + offset + offset_omf_kind);
 
 			++count;
 		}
@@ -493,7 +479,7 @@ static void load_loader_names(void) {
 
 	if (!g_handles_loaded) load_handles();
 
-	if (get_memory_c(OSKind, 0) != 1) return;
+	if (debug_read_8(OSKind) != 1) return;
 
 
 
@@ -534,16 +520,16 @@ static void load_loader_names(void) {
 			for (unsigned offset = 16; offset < 2048; offset += 16) {
 
 				unsigned ea = address + offset;
-				unsigned id = get_memory16_c(ea + offset_user_id, 0);
-				word32 h = get_memory32_c(ea + offset_express_handle, 0);
+				unsigned id = debug_read_16(ea + offset_user_id);
+				word32 h = debug_read_32(ea + offset_express_handle);
 				if (!h || !id) continue;
 
 
 				ptr[count].user_id = id;
 				ptr[count].express_handle = h;
-				ptr[count].stack = get_memory16_c(ea + offset_stack, 0);
-				ptr[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
-				ptr[count].address = get_memory32_c(ea + offset_address, 0);
+				ptr[count].stack = debug_read_16(ea + offset_stack);
+				ptr[count].stack_size = debug_read_16(ea + offset_stack_size);
+				ptr[count].address = debug_read_32(ea + offset_address);
 				ptr[count].file_num = 1;
 
 				++count;
@@ -562,15 +548,15 @@ static void load_loader_names(void) {
 			};
 
 			unsigned ea = address;
-			ptr[count].user_id = get_memory16_c(ea + offset_user_id, 0);
+			ptr[count].user_id = debug_read_16(ea + offset_user_id);
 			ptr[count].express_handle = 0;
-			ptr[count].file_num = get_memory16_c(ea + offset_file_num, 0);
-			ptr[count].stack = get_memory16_c(ea + offset_stack, 0);
-			ptr[count].stack_size = get_memory16_c(ea + offset_stack_size, 0);
-			ptr[count].address = get_memory16_c(ea + offset_address, 0);
+			ptr[count].file_num = debug_read_16(ea + offset_file_num);
+			ptr[count].stack = debug_read_16(ea + offset_stack);
+			ptr[count].stack_size = debug_read_16(ea + offset_stack_size);
+			ptr[count].address = debug_read_16(ea + offset_address);
 
 			/* load the pathname now... */
-			unsigned psize = get_memory16_c(ea + offset_path, 0);
+			unsigned psize = debug_read_16(ea + offset_path);
 			if (offset_path + 2 + psize > size) continue; /* oops */
 			char *cp = gs_to_cstr(ea + offset_path);
 			if (!cp) continue;
@@ -612,8 +598,8 @@ static char *loader_load_path(struct loader_entry *e) {
 	if (e->path) return e->path;
 
 	word32 h = e->express_handle;
-	word32 address = get_memory24_c(h, 0);
-	int offset = get_memory16_c(address + 2, 0);
+	word32 address = debug_read_24(h);
+	int offset = debug_read_16(address + 2);
 	char *cp = gs_to_cstr(address + offset);
 	e->path = cp;
 	return cp;
@@ -657,7 +643,7 @@ static void do_omf(unsigned value) {
 			if (!name) name = "???";
 
 			unsigned hh = iter2->handle;
-			unsigned ea = hh ? get_memory24_c(hh, 0) : 0;
+			unsigned ea = hh ? debug_read_24(hh) : 0;
 			printf("%04x %04x %04x %04x %06x %06x %s\n",
 				iter1->user_id,
 				iter2->file_num,
@@ -853,23 +839,23 @@ word32 tool_lookup(unsigned tool) {
 		fputs("    Sys  TPT    User TPT    Sys WAPT   User WAPT\n", stdout);
 		fputs("    --------    --------    --------   ---------\n", stdout);
 		fprintf(stdout, "    %08x    %08x    %08x    %08x\n",
-			get_memory32_c(TPtr, 0),
-			get_memory32_c(UTPtr, 0),
-			get_memory32_c(WAPTPtr, 0),
-			get_memory32_c(UWAPTPtr, 0)
+			debug_read_32(TPtr),
+			debug_read_32(UTPtr),
+			debug_read_32(WAPTPtr),
+			debug_read_32(UWAPTPtr)
 		);
 		return 0;
 	}
 
-	ptr = get_memory32_c(TPtr, 0);
+	ptr = debug_read_32(TPtr);
 	if (ptr == 0 || ptr > 0xffffff) return 0;
 
-	count = get_memory32_c(ptr, 0);
+	count = debug_read_32(ptr);
 	if (count == 0 || count > 255 || count < tn) return 0;
-	ptr = get_memory32_c(ptr + tn * 4, 0);
+	ptr = debug_read_32(ptr + tn * 4);
 	if (ptr == 0 || ptr > 0xffffff) return 0;
 
-	count = get_memory32_c(ptr, 0);
+	count = debug_read_32(ptr);
 	if (count == 0 || count > 255) return 0;
 	if (ix && ix > count) return 0;
 
@@ -880,7 +866,7 @@ word32 tool_lookup(unsigned tool) {
 	const char *cp;
 	if (ix) {
 		unsigned n = tn + (ix << 8);
-		addr = get_memory24_c(ptr + ix * 4, 0);
+		addr = debug_read_24(ptr + ix * 4);
 		if (addr) ++addr;
 		cp = debug_tool_name(n, 0xe10000, 1);
 		if (!cp) cp = "---unknown---";
@@ -893,7 +879,7 @@ word32 tool_lookup(unsigned tool) {
 		for(ix = 1; ix < count; ++ix) {
 			unsigned n = tn + (ix << 8);
 
-			addr = get_memory24_c(ptr + ix * 4, 0);
+			addr = debug_read_24(ptr + ix * 4);
 			if (addr) ++addr;
 			cp = debug_tool_name(n, 0xe10000, 1);
 			if (!cp) cp = "---unknown---";
@@ -951,7 +937,7 @@ word32 do_hexdump(word32 address, int lines) {
 	while (--lines) {
 		char *cp = buffer1;
 		for (i = 0; i < 16; ++i) {
-			uint8_t c = get_memory_c(address + i, 0);
+			uint8_t c = debug_read_8(address + i);
 			*cp++ = hex[c >> 4];
 			*cp++ = hex[c & 0x0f];
 			*cp++ = ' ';
@@ -1024,7 +1010,6 @@ static void do_text(void) {
   };
 
   extern int g_cur_a2_stat;
-  extern int get_byte_at_address(int addr);
 
 
   if (g_cur_a2_stat & ALL_STAT_SUPER_HIRES) return; // not text...
@@ -1044,12 +1029,12 @@ static void do_text(void) {
       unsigned char c;
 
       if (st80) {
-        c  = get_byte_at_address(0xe10000 + address);
+        c  = debug_read_8(0xe10000 + address);
         c = fix_char(c);
         buffer[column++] = c;
       }
 
-      c  = get_byte_at_address(0xe00000 + address);
+      c  = debug_read_8(0xe00000 + address);
       c = fix_char(c);
       buffer[column++] = c;
 
@@ -1065,39 +1050,129 @@ static void do_text(void) {
   write(1, "\n\n", 2);
 }
 
+static word32 format_operand(char *buffer, word32 address, unsigned mode, unsigned args, unsigned operand);
+
+static void backtrace_helper(Pc_log *ptr) {
+
+	if (ptr->dbank_kpc == 0 && ptr->instr == 0) return;
+
+	word32 kpc = ptr->dbank_kpc & 0xffffff;
+	unsigned opcode = ptr->instr >> 24;
+	word32 operand = ptr->instr & 0xffffff;
+
+	unsigned mode = disasm_types[opcode];
+	unsigned args = mode >> 8;
+
+	int bsize = 0;
+	char buffer[32];
+	unsigned char buffer2[32];
+
+	const char *opcode_string = disasm_opcodes[opcode];
+	const char *comment = NULL;
+
+	buffer2[bsize++] = opcode;
+	switch(args) {
+		case 1:
+			operand &= 0xff;
+			buffer2[bsize++] = operand;
+			break;
+		case 2:
+			operand &= 0xffff;
+			buffer2[bsize++] = operand;
+			buffer2[bsize++] = operand >> 8;
+			break;
+		case 3:
+			operand &= 0xffffff;
+			buffer2[bsize++] = operand;
+			buffer2[bsize++] = operand >> 8;
+			buffer2[bsize++] = operand >> 16;
+			break;
+	}
+	word32 ea = format_operand(buffer, kpc, mode, args, operand);
+
+	/* special cases PER and PEA */
+	/* (although they're not actually logged here...) */
+	if (opcode == 0x62 || opcode == 0xf4) ea = 0;
+
+	// todo -- tool names, debug names, vector names
+	// check who owns the address?
+
+	if (opcode == 0x22 && operand == 0xe10000) {
+		const char *name = debug_tool_name(ptr->xreg_yreg >> 16, 0xe10000, 0);
+		if (name) {
+			opcode_string = name;
+			buffer[0] = 0;
+		}
+	} else {
+		unsigned bank = ea >> 16;
+		if (bank == 0x00 || bank == 0x01 || bank == 0xe0 || bank == 0xe1) {
+			comment = debug_tool_name(ea & 0xffff, bank, 1);
+		}
+
+		if (!comment) {
+			comment = get_inline_debug_name(ea);
+		}
+	}
+
+	int n;
+	n = printf("%02x/%04x:", kpc >> 16, kpc & 0xffff);
+	for(int i = 0; i < bsize; ++i)
+		n += printf(" %02x", buffer2[i]);
+	while (n < 40) { fputc(' ', stdout); ++n; }
+	n += printf("%s %s", opcode_string, buffer);
+	if (comment) {
+		while (n < 65) { fputc(' ', stdout); ++n; }
+		printf("; %s", comment);
+	}
+	fputc('\n', stdout);
+}
+
+static void backtrace(void) {
+	extern Pc_log g_pc_log[32];
+	extern unsigned g_pc_log_index;
+
+	for (int i = g_pc_log_index; i < 32; ++i) {
+		backtrace_helper(&g_pc_log[i]);
+	}
+
+	for (int i = 0; i < g_pc_log_index; ++i) {
+		backtrace_helper(&g_pc_log[i]);
+	}
+}
+
 static const char *check_stack_rts(word32 address, unsigned bank, char *buffer, int *n) {
 	word32 rt;
 	unsigned op;
 	const char *comment = NULL;
 
 	*n = 0;
-	rt = get_memory24_c(address, 0);
+	rt = debug_read_24(address);
 	if (rt == 0) return NULL;
 
 	rt = (rt & 0xff0000) | ((rt - 3) & 0xffff);
-	op = get_memory_c(rt, 0);
+	op = debug_read_8(rt);
 	if (op == 0x22) {
 		word32 x;
-		word32 ea = get_memory24_c(rt + 1, 0); /* crosses bank :/ */
+		word32 ea = debug_read_24(rt + 1); /* crosses bank :/ */
 
 		sprintf(buffer, "%02x/%04x: JSL %06x",
 			rt >> 16, rt & 0xffff, ea);
 
 		if (ea == 0xe10000 || ea == 0xe10008) {
-			if ((rt & 0xffff) >= 3 && get_memory_c(rt - 3, 0) == 0xa2) {
-				x = get_memory16_c(rt - 2, 0);
+			if ((rt & 0xffff) >= 3 && debug_read_8(rt - 3) == 0xa2) {
+				x = debug_read_16(rt - 2);
 				comment = debug_tool_name(x, 0xe10000, 1);
 			}
 		}
 		if (ea == 0xe100a8) {
 			/* inline gs/os call */
-			x = get_memory16_c(rt + 4, 0);
+			x = debug_read_16(rt + 4);
 			comment = debug_tool_name(x, 0xe100a8, 0);
 		}
 		if (ea == 0xe100b0) {
 			/* stack-based gs/os call */
-			if ((rt & 0xffff) >= 3 && get_memory_c(rt - 3, 0) == 0xf4) {
-				x = get_memory16_c(rt - 2, 0);
+			if ((rt & 0xffff) >= 3 && debug_read_8(rt - 3) == 0xf4) {
+				x = debug_read_16(rt - 2);
 				comment = debug_tool_name(x, 0xe100a8, 0);
 			}
 		}
@@ -1113,12 +1188,12 @@ static const char *check_stack_rts(word32 address, unsigned bank, char *buffer, 
 	/* todo -- check $dc jmp [xxxx]? */
 
 	/* sigh... this might re-check 0000 a lot */
-	rt = get_memory16_c(address, 0);
+	rt = debug_read_16(address);
 	rt = bank | ((rt - 2) & 0xffff);
 
-	op = get_memory_c(rt, 0);
+	op = debug_read_8(rt);
 	if (op == 0x20 || op == 0xfc) {
-		word32 ea = get_memory16_c(rt + 1, 0);
+		word32 ea = debug_read_16(rt + 1);
 		if (op == 0x20) {
 			sprintf(buffer, "%02x/%04x: JSR %04x",
 				rt >> 16, rt & 0xffff, ea);
@@ -1196,7 +1271,7 @@ word32 do_stack(word32 address, unsigned bank) {
 			}
 
 			for (offset = 0; offset < n; ++offset) {
-				c = get_memory_c(address + offset, 0);
+				c = debug_read_8(address + offset);
 				*cp++ = hex[c >> 4];
 				*cp++ = hex[c & 0x0f];
 				*cp++ = ' ';
@@ -1220,7 +1295,7 @@ word32 do_stack(word32 address, unsigned bank) {
 			continue;
 		}
 
-		c = get_memory_c(address + offset, 0);
+		c = debug_read_8(address + offset);
 		*cp++ = hex[c >> 4];
 		*cp++ = hex[c & 0x0f];
 		*cp++ = ' ';
@@ -1245,28 +1320,28 @@ word32 do_stack(word32 address, unsigned bank) {
 
 
 static int is_jsl_e10000(word32 address) {
-	return get_memory_c(address, 0) == 0x22 &&
-		get_memory24_c(address + 1, 0) == 0xe10000;
+	return debug_read_8(address) == 0x22 &&
+		debug_read_24(address + 1) == 0xe10000;
 }
 
 static int is_jsl_e10008(word32 address) {
-	return get_memory_c(address, 0) == 0x22 &&
-		get_memory24_c(address + 1, 0) == 0xe10008;
+	return debug_read_8(address) == 0x22 &&
+		debug_read_24(address + 1) == 0xe10008;
 }
 static int is_jsl_e100a8(word32 address) {
-	return get_memory_c(address, 0) == 0x22 &&
-		get_memory24_c(address + 1, 0) == 0xe100a8;
+	return debug_read_8(address) == 0x22 &&
+		debug_read_24(address + 1) == 0xe100a8;
 }
 
 
 static int is_jsl_e100b0(word32 address) {
-	return get_memory_c(address, 0) == 0x22 &&
-		get_memory24_c(address + 1, 0) == 0xe100b0;
+	return debug_read_8(address) == 0x22 &&
+		debug_read_24(address + 1) == 0xe100b0;
 }
 
 static int is_jsr_bf00(word32 address) {
-	return get_memory_c(address, 0) == 0x20 &&
-		get_memory16_c(address + 1, 0) == 0xbf00;
+	return debug_read_8(address) == 0x20 &&
+		debug_read_16(address + 1) == 0xbf00;
 }
 
 int g_disasm_psr;
@@ -1286,23 +1361,23 @@ static const char *get_inline_debug_name(word32 address) {
 	int match = 0;
 	int offset = 0;
 
-	unsigned op = get_memory_c(address, 0);
+	unsigned op = debug_read_8(address);
 	if (op == 0x82
-		&& get_memory_c(address + 3, 0) == 0x71
-		&& get_memory_c(address + 4, 0) == 0x77) {
+		&& debug_read_8(address + 3) == 0x71
+		&& debug_read_8(address + 4) == 0x77) {
 		match = 1;
 		address += 5;
 
-		offset = (int16_t)get_memory16_c(address + 1, 0);
+		offset = (int16_t)debug_read_16(address + 1);
 	}
 
 	if (op == 0x80
-		&& get_memory_c(address + 2, 0) == 0x71
-		&& get_memory_c(address + 3, 0) == 0x77) {
+		&& debug_read_8(address + 2) == 0x71
+		&& debug_read_8(address + 3) == 0x77) {
 		match = 1;
 		address += 4;
 
-		offset = (int8_t)get_memory_c(address + 1, 0);
+		offset = (int8_t)debug_read_8(address + 1);
 	}
 
 
@@ -1311,9 +1386,9 @@ static const char *get_inline_debug_name(word32 address) {
 
 		/* sanity check offset? should be positive. */
 
-		n = get_memory_c(address++, 0);
+		n = debug_read_8(address++);
 		for (i = 0; i < n; ++i) {
-			unsigned char c = get_memory_c(address++, 0);
+			unsigned char c = debug_read_8(address++);
 			if (c & 0x80) return NULL;
 			if (!isprint(c)) return NULL;
 			buffer[i] = c;
@@ -1324,6 +1399,101 @@ static const char *get_inline_debug_name(word32 address) {
 
 	return NULL;
 }
+
+static word32 format_operand(char *buffer, word32 address, unsigned mode, unsigned args, unsigned operand) {
+
+	word32 ea = 0;
+	unsigned bank = address & 0xff0000;
+	switch(mode & 0xff) {
+		case ABS:
+			sprintf(buffer, "$%04x", operand);
+			return bank | operand;
+			break;
+		case ABS_X:
+			sprintf(buffer, "$%04x,x", operand);
+			break;
+		case ABS_Y:
+			sprintf(buffer, "$%04x,y", operand);
+			break;
+
+		case DP:
+			sprintf(buffer,"$%02x",operand);
+			break;
+		case DP_X:
+			sprintf(buffer,"$%02x,x",operand);
+			break;
+		case DP_Y:
+			sprintf(buffer,"$%02x,y",operand);
+			break;
+
+		case ABS_LONG:
+			sprintf(buffer, "$%06x", operand);
+			return operand;
+			break;
+		case ABS_LONG_X:
+			sprintf(buffer, "$%06x,x", operand);
+			break;
+		case ABS_LONG_Y:
+			sprintf(buffer, "$%06x,y", operand);
+			break;
+
+		case INDIR:
+			sprintf(buffer,"($%0*x)", args * 2, operand );
+			break;
+		case INDIR_X:
+			sprintf(buffer,"($%0*x,x)", args * 2, operand );
+			break;
+		case INDIR_Y:
+			sprintf(buffer,"($%0*x),y", args * 2, operand );
+			break;
+
+		case INDIR_LONG:
+			sprintf(buffer,"[$%0*x]", args * 2, operand );
+			break;
+		case INDIR_LONG_X:
+			sprintf(buffer,"[$%0*x,x]", args * 2, operand );
+			break;
+		case INDIR_LONG_Y:
+			sprintf(buffer,"[$%0*x],y", args * 2, operand );
+			break;
+
+		case SR:
+			sprintf(buffer,"$%02x,s", operand );
+			break;
+
+		case SR_Y:
+			sprintf(buffer,"($%02x,s),y", operand );
+			break;
+
+		case IMMEDIATE:
+			sprintf(buffer,"#$%0*x",args * 2, operand);
+			break;
+
+		case INTERRUPT:
+			sprintf(buffer,"$%02x",operand);
+			break;
+
+		case BLOCK:
+			sprintf(buffer,"$%02x,$%02x",operand >> 8, operand & 0xff);
+			break;
+
+		case RELATIVE:
+			ea = address;
+			if (args == 1) ea += (int8_t)operand;
+			else ea += (int16_t)operand;
+			ea &= 0xffff;
+			sprintf(buffer,"$%04x", ea);
+			ea |= address & 0xff0000;
+			return ea;
+			break;
+		default:
+			buffer[0] = 0;
+			break;
+	}
+	return 0;
+}
+// todo -- separate function to calc effective address based on 
+// actual registers...
 
 word32 do_list(word32 address, int lines) {
 
@@ -1349,7 +1519,7 @@ word32 do_list(word32 address, int lines) {
 		unsigned bank;
 		pc = address;
 
-		opcode = get_memory_c(address++, 0);
+		opcode = debug_read_8(address++);
 		mode = disasm_types[opcode];
 		args = mode >> 8;
 
@@ -1368,16 +1538,16 @@ word32 do_list(word32 address, int lines) {
 		operand = 0;
 		switch(args) {
 			case 1:
-				operand = get_memory_c(address, 0);
+				operand = debug_read_8(address);
 				buffer2[bsize++] = operand;
 				break;
 			case 2:
-				operand = get_memory16_c(address, 0);
+				operand = debug_read_16(address);
 				buffer2[bsize++] = operand;
 				buffer2[bsize++] = operand >> 8;
 				break;
 			case 3:
-				operand = get_memory24_c(address, 0);
+				operand = debug_read_24(address);
 				buffer2[bsize++] = operand;
 				buffer2[bsize++] = operand >> 8;
 				buffer2[bsize++] = operand >> 16;
@@ -1494,7 +1664,7 @@ word32 do_list(word32 address, int lines) {
 						opcode_string = name;
 						buffer[0] = 0;
 						for (i = 0; i < 4; ++i) {
-							buffer2[bsize++] = get_memory_c(address++, 0);
+							buffer2[bsize++] = debug_read_8(address++);
 						}
 					}
 				}
@@ -1516,24 +1686,24 @@ word32 do_list(word32 address, int lines) {
 				ea = operand;
 				if (operand == 0xe100a8) {
 					/* inline GS/OS call? */
-					unsigned num = get_memory16_c(address, 0);
+					unsigned num = debug_read_16(address);
 					const char *name = debug_tool_name(num, operand, 0);
 					if (name) {
 						comment = NULL;
 						opcode_string = name;
-						unsigned parms = get_memory24_c(address + 2, 0);
+						unsigned parms = debug_read_24(address + 2);
 						sprintf(buffer, "$%06x", parms);
 
 						for (i = 0; i < 6; ++i) {
-							buffer2[bsize++] = get_memory_c(address++, 0);
+							buffer2[bsize++] = debug_read_8(address++);
 						}
 					}
 				}
 				if (operand == 0xe100b0) {
 					/* stack-based GS/OS call? */
 					/* ph4 block, ph2 num, jsl e100b0 */
-					if (get_memory_c(address - 7, 0) == 0xf4) {
-						unsigned num = get_memory16_c(address - 6, 0);
+					if (debug_read_8(address - 7) == 0xf4) {
+						unsigned num = debug_read_16(address - 6);
 						const char *name;
 						name = debug_tool_name(num, 0xe100a8, 0);
 						if (name) comment = name;
@@ -1548,15 +1718,15 @@ word32 do_list(word32 address, int lines) {
 			case 0x20: /* jsr */
 				ea = (operand | (address & 0xff0000));
 				if (ea == 0x00bf00) {
-					unsigned num = get_memory_c(address, 0);
+					unsigned num = debug_read_8(address);
 					const char *name = debug_tool_name(num, operand, 0);
 					if (name) {
 						opcode_string = name;
-						unsigned parms = get_memory16_c(address + 1, 0);
+						unsigned parms = debug_read_16(address + 1);
 						sprintf(buffer, "$%04x", parms);
 
 						for (i = 0; i < 3; ++i) {
-							buffer2[bsize++] = get_memory_c(address++, 0);
+							buffer2[bsize++] = debug_read_8(address++);
 						}
 					}
 				}
@@ -1578,7 +1748,7 @@ word32 do_list(word32 address, int lines) {
 
 					/* include the 0x77 71 magic bytes */
 					for (i = 0; i < 2; ++i) {
-						buffer2[bsize++] = get_memory_c(address++, 0);
+						buffer2[bsize++] = debug_read_8(address++);
 					}
 					address = ea;
 					ea = 0;
@@ -1644,7 +1814,7 @@ word32 next_pc(void) {
 		E = 1 << 8
 	};
 
-	unsigned opcode = get_memory_c(pc++, 0);
+	unsigned opcode = debug_read_8(pc++);
 	unsigned operand = 0;
 
 	unsigned mode = disasm_types[opcode];
@@ -1661,13 +1831,13 @@ word32 next_pc(void) {
 	operand = 0;
 	switch(args) {
 		case 1:
-			operand = get_memory_c(pc, 0);
+			operand = debug_read_8(pc);
 			break;
 		case 2:
-			operand = get_memory16_c(pc, 0);
+			operand = debug_read_16(pc);
 			break;
 		case 3:
-			operand = get_memory24_c(pc, 0);
+			operand = debug_read_24(pc);
 			break;
 	}
 	pc += args;
@@ -1752,12 +1922,12 @@ word32 next_pc(void) {
 int next_pc(void) {
 
 	word32 pc = engine.kpc;
-	unsigned opcode = get_memory_c(pc++, 0);
+	unsigned opcode = debug_read_8(pc++);
 	unsigned operand = 0;
 
 	switch (opcode) {
 		case 0x20: /* jsr abs */
-			operand = get_memory16_c(pc, 0);
+			operand = debug_read_16(pc);
 			pc += 2;
 			if ((pc & 0xff0000) == 0 && operand == 0xbf00)
 				pc += 3;
@@ -1767,7 +1937,7 @@ int next_pc(void) {
 			return pc + 2;
 			break;
 		case 0x22: /* jsl */
-			operand = get_memory24_c(pc, 0);
+			operand = debug_read_24(pc);
 			pc += 3;
 			if (operand == 0xe100a8)
 				pc += 6;
@@ -1989,7 +2159,15 @@ set_psr:
 	return 0;
 }
 
-static word32 do_find(word32 addr, const char *cp) {
+static word32 debug_goodies_find(word32 addr, const char *cp) {
+
+
+	/* address types:
+	 * TODO - range support
+	 * 8-bit: search bank
+	 * 16-bit: search user-id
+	 * 24-bit: search handle.
+	*/
 
 	enum {
 		buffer_max = 32
@@ -2030,7 +2208,7 @@ static word32 do_find(word32 addr, const char *cp) {
 			buffer[i] = v;
 			wildcard[i] = 0x00;
 			++i;
-			if (i >=buffer_max) {
+			if (i >= buffer_max) {
 				fputs("too long\n", stderr);
 				return 0;
 			}
@@ -2043,11 +2221,10 @@ ok:
 	if (!buffer_size) return 0;
 
 	/* now search all memory for the string.... */
-	extern int get_byte_at_address(int addr);
 
 
 	int map[256];
-	for (int i = 0; 1 < 256; ++i) map[i] = 0;
+	for (int i = 0; i < 256; ++i) map[i] = 0;
 	for (int i = 0, m = 1; i < buffer_size; ++i, m <<= 1) {
 		unsigned c = buffer[i];
 		map[c] |= m;
@@ -2059,15 +2236,35 @@ ok:
 	unsigned count = 0;
 	unsigned rv = 0;
 	int success = 1 << (buffer_size-1);
-	for (unsigned i = 0; i < 0x10000; ++i) {
-		unsigned c = get_byte_at_address(i);
+
+
+	word32 end = 0;
+
+	if (addr <= 0xff) {
+		addr <<= 16;
+		end = addr + 0x010000;
+	} else {
+		return 0;
+	}
+
+	const uint8_t *page = debug_read_page(addr);
+	unsigned offset = addr & 0xff;
+
+	while (addr < end) {
+
+		unsigned c = page[offset];
 		st = (st << 1) | 1;
 		st &= map[c];
 		if (st & success) {
 			/* match! */
-			rv = i + 1 - buffer_size;
+			rv = addr + 1 - buffer_size;
 			++count;
-			do_hexdump(i + 1 - buffer_size, (buffer_size + 15) >> 4);
+			do_hexdump(addr + 1 - buffer_size, (buffer_size + 15) >> 4);
+		}
+		++addr;
+		offset = (offset + 1) & 0xff;
+		if (!offset) {
+			page = debug_read_page(addr); 
 		}
 	}
 	return rv;
@@ -2222,8 +2419,7 @@ int delete_bp(int type, word32 addr) {
 
 
 static int tbrk(int type, int clear, word32 num, const char *cp) {
-    extern int lookup_tool_number(const char *name, unsigned vector);
-	extern const char *debug_tool_name(unsigned number, unsigned vector, unsigned full);
+
 
 	/*
 	 *
@@ -2399,12 +2595,10 @@ static int parse_command(const char *cp) {
 		("help" | "?") eol { do_help(); return 0; }
 
 		"!!" eol {
-			extern uint32_t sweet16_asm_shell(uint32_t addr);
 			g_prev_address = sweet16_asm_shell(g_prev_address);
 			return 0;
 		}
 		"!" eol {
-			extern uint32_t mini_asm_shell(uint32_t addr);
 			g_prev_address = mini_asm_shell(g_prev_address);
 			return 0;
 		}
@@ -2416,7 +2610,7 @@ static int parse_command(const char *cp) {
 
 		"%pc++" eol {
 			/* todo */
-			unsigned opcode = get_memory_c(engine.kpc, 0);
+			unsigned opcode = debug_read_8(engine.kpc);
 			unsigned mode = disasm_types[opcode];
 			unsigned args = mode >> 8;
 			word32 tmp;
@@ -2556,7 +2750,7 @@ indir:
 		"^" {
 			/* 3-byte indirection */
 			if (!has_bank) addr = (g_prev_address & 0xff0000) | addr;
-			addr = get_memory24_c(addr, 0);
+			addr = debug_read_24(addr);
 			has_bank = 1;
 			continue; 
 		}
@@ -2565,7 +2759,7 @@ indir:
 			/* 3-byte indirection */
 			if (!has_bank) addr = (g_prev_address & 0xff0000) | addr;
 			word32 b = addr & 0xff0000;
-			addr = get_memory16_c(addr, 0) | b;
+			addr = debug_read_16(addr) | b;
 			has_bank = 1;
 			continue; 
 		}
@@ -2767,7 +2961,6 @@ command:
 			return 0;
 		}
 		"\""  {
-			extern int debug_find(const char *needle);
 			while (isspace(*YYCURSOR)) ++YYCURSOR;
 			debug_find(YYCURSOR);
 			return 0;

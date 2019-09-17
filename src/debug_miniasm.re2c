@@ -7,7 +7,8 @@
 
 #include "defc.h"
 
-extern int g_disasm_psr;
+#include "debug_shell.h"
+
 
 static int g_os_type = 0xe100a8;
 
@@ -573,7 +574,6 @@ static const char *parse_opcode(const char *cp, struct cookie *cookie) {
 
   '_' [A-Za-z0-9]* / (ws|eol) {
 
-    extern int lookup_tool_number(const char *name, unsigned vector);
 
     char name[20];
     int tool;
@@ -697,8 +697,6 @@ static const char *parse_operand(const char *cp, struct cookie *cookie) {
   return ltrim(cp);
 }
 
-extern uint32_t do_list(uint32_t address, int lines);
-extern char *x_readline(const char *prompt);
 
 static int error(int offset, const char *msg) {
 	while (offset > 0) { fputc(' ', stderr); --offset; }
