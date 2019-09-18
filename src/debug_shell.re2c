@@ -934,7 +934,7 @@ word32 do_hexdump(word32 address, int lines) {
 	char buffer2[20];
 	int i;
 
-	while (--lines) {
+	while (lines--) {
 		char *cp = buffer1;
 		for (i = 0; i < 16; ++i) {
 			uint8_t c = debug_read_8(address + i);
@@ -2175,7 +2175,8 @@ static word32 debug_goodies_find(word32 addr, const char *cp) {
 		buffer_max = 32
 	};
 	unsigned char buffer[32];
-	unsigned char wildcard[32];
+
+	int map[256];
 	
 	int buffer_size = 0;
 	int i = 0;
@@ -2183,6 +2184,10 @@ static word32 debug_goodies_find(word32 addr, const char *cp) {
 	const char *YYCURSOR = cp;
 	const char *YYMARKER = NULL;
 	const char *YYCTXMARKER = NULL;
+
+
+	memset(map, 0, sizeof(map));
+	unsigned mask = 1;
 
 	for (;;) {
 		const char *start = YYCURSOR;
@@ -2196,10 +2201,12 @@ static word32 debug_goodies_find(word32 addr, const char *cp) {
 
 		"*" {
 			/* wildcard */
-			buffer[i] = 0x00;
-			wildcard[i] = 0x01;
-				++i;
-			if (i >=buffer_max) {
+
+			for (int j = 0; j < 256; ++j)
+				map[j] |= mask;
+			mask <<= 1;
+
+			if (++i >=buffer_max) {
 				fputs("too long\n", stderr);
 				return 0;
 			}
@@ -2207,15 +2214,76 @@ static word32 debug_goodies_find(word32 addr, const char *cp) {
 		}
 		x{1,2} {
 			unsigned v = to_hex(start, YYCURSOR);
-			buffer[i] = v;
-			wildcard[i] = 0x00;
-			++i;
-			if (i >= buffer_max) {
+			map[v] |= mask;
+			mask <<= 1;
+
+			if (++i >= buffer_max) {
 				fputs("too long\n", stderr);
 				return 0;
 			}
 			continue;
 		}
+
+		["] [^"\x00]* ["] {
+			const char *iter = start + 1;
+			const char * end = YYCURSOR - 1;
+			unsigned len = end - iter;
+
+			int ci = 0;
+			if (*YYCURSOR == 'i') {
+				ci++;
+				++YYCURSOR;
+			}
+
+			i += len;
+			if (i >= buffer_max) {
+				fputs("too long\n", stderr);
+				return 0;
+			}
+
+			for( ; iter < end; ++iter) {
+				unsigned v = *iter;
+				if (ci && isalpha(v)) {
+					map[v | 0x20] |= mask;
+					map[v & ~0x20] |= mask;
+				} else {
+					map[v] |= mask;
+				}
+				mask <<= 1;
+			}
+			continue;
+		}
+
+		['] [^'\x00]* ['] {
+			const char *iter = start + 1;
+			const char * end = YYCURSOR - 1;
+			unsigned len = end - iter;
+
+			int ci = 0;
+			if (*YYCURSOR == 'i') {
+				ci++;
+				++YYCURSOR;
+			}
+
+			i += len;
+			if (i >= buffer_max) {
+				fputs("too long\n", stderr);
+				return 0;
+			}
+
+			for( ; iter < end; ++iter) {
+				unsigned v = *iter;
+				if (ci && isalpha(v)) {
+					map[v | 0x20 | 0x80] |= mask;
+					map[(v & ~0x20) | 0x80] |= mask;
+				} else {
+					map[v | 0x80] |= mask;
+				}
+				mask <<= 1;
+			}
+			continue;
+		}
+
 		*/
 	}
 ok:
@@ -2224,14 +2292,6 @@ ok:
 
 	/* now search all memory for the string.... */
 
-
-	int map[256];
-	for (int i = 0; i < 256; ++i) map[i] = 0;
-	for (int i = 0, m = 1; i < buffer_size; ++i, m <<= 1) {
-		unsigned c = buffer[i];
-		map[c] |= m;
-		if (wildcard[i]) for (int j = 0; j < 256; ++j) map[j] |= m;
-	}
 
 	/* todo -- should take a handle, an id, or a memory range */
 	word32 st = 0;
@@ -2967,6 +3027,13 @@ command:
 			debug_find(YYCURSOR);
 			return 0;
 		}
+
+		"\\find" / (ws|eol) {
+			while (isspace(*YYCURSOR)) ++YYCURSOR;
+			debug_goodies_find(explicit_address, YYCURSOR);
+			return 0;
+		}
+
 
 		"\\text" eol {
 			do_text();
