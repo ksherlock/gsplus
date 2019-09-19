@@ -52,14 +52,6 @@ extern byte *g_rom_fc_ff_ptr_allocated;
 extern byte *g_rom_cards_ptr_allocated;
 extern byte *g_dummy_memory1_ptr_allocated;
 
-extern Pc_log *g_log_pc_ptr;
-extern Pc_log *g_log_pc_start_ptr;
-extern Pc_log *g_log_pc_end_ptr;
-
-extern Data_log *g_log_data_ptr;
-extern Data_log *g_log_data_start_ptr;
-extern Data_log *g_log_data_end_ptr;
-
 int size_tab[] = {
 #include "size_c.h"
 };
@@ -87,38 +79,62 @@ int bogus[] = {
 
 #define FCYCLES_ROUND   fcycles = (int)(fcycles + fplus_x_m1);
 
-#ifdef LOG_PC
-# define LOG_PC_MACRO()                                                 \
-  tmp_pc_ptr = g_log_pc_ptr++;                            \
-  tmp_pc_ptr->dbank_kpc = (dbank << 24) + kpc;            \
-  tmp_pc_ptr->instr = (opcode << 24) + arg_ptr[1] +       \
-                      (arg_ptr[2] << 8) + (arg_ptr[3] << 16);         \
-  tmp_pc_ptr->psr_acc = ((psr & ~(0x82)) << 16) + acc +   \
-                        (neg << 23) + ((!zero) << 17);                  \
-  tmp_pc_ptr->xreg_yreg = (xreg << 16) + yreg;            \
-  tmp_pc_ptr->stack_direct = (stack << 16) + direct;      \
-  tmp_pc_ptr->dcycs = fcycles + g_last_vbl_dcycs - fplus_2; \
-  if(g_log_pc_ptr >= g_log_pc_end_ptr) {                  \
-    /*halt2_printf("log_pc oflow %f\n", tmp_pc_ptr->dcycs);*/ \
-    g_log_pc_ptr = g_log_pc_start_ptr;              \
-  }
+#if defined(GSPLUS_BACKTRACE)
+Pc_log g_pc_log[32];
+unsigned g_pc_log_index = 0;
 
-# define LOG_DATA_MACRO(in_addr, in_val, in_size)                       \
-  g_log_data_ptr->dcycs = fcycles + g_last_vbl_dcycs;     \
-  g_log_data_ptr->addr = in_addr;                         \
-  g_log_data_ptr->val = in_val;                           \
-  g_log_data_ptr->size = in_size;                         \
-  g_log_data_ptr++;                                       \
-  if(g_log_data_ptr >= g_log_data_end_ptr) {              \
-    g_log_data_ptr = g_log_data_start_ptr;          \
+static int is_jump(unsigned char opcode) {
+  switch(opcode) {
+    // jsr/jsl
+    case 0x20:
+    case 0xfc:
+    case 0x22:
+    // jmp/jml
+    case 0x4c:
+    case 0x6c:
+    case 0x7c:
+    case 0x5c:
+    case 0xdc:
+    //branches
+    case 0x10:
+    case 0x30:
+    case 0x50:
+    case 0x70:
+    case 0x80:
+    case 0x82:
+    case 0x90:
+    case 0xb0:
+    case 0xd0:
+    case 0xf0:
+    // brk/cop
+    case 0x00:
+    case 0x02:
+    // rts/rti/rtl
+    case 0x40:
+    case 0x60:
+    case 0x6b:
+      return 1;
+    default:
+    return 0;
   }
+}
 
+#define LOG_PC_MACRO() \
+  if (is_jump(opcode)) { \
+    word32 xpsr = (psr & ~0x82) + (neg << 7) + ((!zero) << 1);\
+    Pc_log *ptr = &g_pc_log[g_pc_log_index]; \
+    ptr->dbank_kpc = (dbank << 24) + kpc; \
+    ptr->instr = (opcode << 24) + arg_ptr[1] + (arg_ptr[2] << 8) + (arg_ptr[3] << 16);\
+    ptr->xreg_yreg = (xreg << 16) + yreg; \
+    ptr->psr_acc = (xpsr << 16) + acc;\
+    ptr->stack_direct = (stack << 16) + direct; \
+    g_pc_log_index = (g_pc_log_index + 1) & 31; \
+  }
 #else
 # define LOG_PC_MACRO()
-# define LOG_DATA_MACRO(addr, val, size)
-/* Just do nothing */
 #endif
 
+# define LOG_DATA_MACRO(addr, val, size)
 
 #define GET_1BYTE_ARG   arg = arg_ptr[1];
 #define GET_2BYTE_ARG   arg = arg_ptr[1] + (arg_ptr[2] << 8);
@@ -1052,7 +1068,6 @@ word32 get_remaining_operands(word32 addr, word32 opcode, word32 psr, Fplus *fpl
 int enter_engine(Engine_reg *engine_ptr)     {
   register byte   *ptr;
   byte    *arg_ptr;
-  Pc_log  *tmp_pc_ptr;
   byte    *stat;
   word32 wstat;
   word32 arg;
@@ -1095,8 +1110,6 @@ int enter_engine(Engine_reg *engine_ptr)     {
   if (flags & FLAG_IGNORE_BP) kpc_support = 0;
 
 
-  tmp_pc_ptr = 0;
-
   kpc = engine_ptr->kpc;
   acc = engine_ptr->acc;
   xreg = engine_ptr->xreg;
@@ -1123,7 +1136,6 @@ recalc_accsize:
     while(fcycles <= g_fcycles_stop) {
 
       FETCH_OPCODE;
-
       LOG_PC_MACRO();
 
       switch(opcode) {

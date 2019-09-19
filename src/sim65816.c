@@ -245,16 +245,6 @@ void *g_memory_alloc_ptr = 0;           /* for freeing memory area */
 
 Page_info page_info_rd_wr[2*65536 + PAGE_INFO_PAD_SIZE];
 
-Pc_log g_pc_log_array[PC_LOG_LEN + 2];
-Data_log g_data_log_array[PC_LOG_LEN + 2];
-
-Pc_log  *g_log_pc_ptr = &(g_pc_log_array[0]);
-Pc_log  *g_log_pc_start_ptr = &(g_pc_log_array[0]);
-Pc_log  *g_log_pc_end_ptr = &(g_pc_log_array[PC_LOG_LEN]);
-
-Data_log *g_log_data_ptr = &(g_data_log_array[0]);
-Data_log *g_log_data_start_ptr = &(g_data_log_array[0]);
-Data_log *g_log_data_end_ptr = &(g_data_log_array[PC_LOG_LEN]);
 
 // OG Added sim65816_initglobals()
 void sim65816_initglobals() {
@@ -1518,7 +1508,7 @@ int run_prog()      {
         break;
       }
       if(g_stepping) {
-        printf("HIT STEPPING BREAK!\n");
+        //printf("HIT STEPPING BREAK!\n"); /* ??? */
         break;
       }
       /* Pop this guy off of the queue */
@@ -1640,6 +1630,23 @@ void take_irq(int is_it_brk)      {
     g_wait_pending = 0;
   }
 
+
+
+  #if defined(GSPLUS_BACKTRACE)
+	extern Pc_log g_pc_log[32];
+	extern unsigned g_pc_log_index;
+
+	Pc_log *ptr = &g_pc_log[g_pc_log_index];
+	ptr->dbank_kpc = (engine.dbank << 24) + kpc;
+	ptr->instr = -1;
+	ptr->xreg_yreg = (engine.xreg << 16) + engine.yreg;
+	ptr->psr_acc = (engine.psr << 16) + engine.acc;
+	ptr->stack_direct = (engine.stack << 16) + engine.direct;
+	g_pc_log_index = (g_pc_log_index + 1) & 31;
+
+  #endif
+
+
   if(engine.psr & 0x100) {
     /* Emulation */
     set_memory_c(engine.stack, (engine.kpc >> 8) & 0xff, 0);
@@ -1688,6 +1695,12 @@ void take_irq(int is_it_brk)      {
     }
 
   }
+
+
+	/* TODO -- if stepping, disable while in the IRQ, set a temp breakpoint for engine.kpc
+	 * so stepping will resume after RTI
+	 */
+
 
   new_kpc = get_memory_c(va, 0);
   new_kpc = new_kpc + (get_memory_c(va+1, 0) << 8);
