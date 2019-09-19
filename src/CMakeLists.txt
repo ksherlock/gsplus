@@ -75,6 +75,7 @@ option(WITH_HOST_FST "Enable host fst support" ON)
 option(TOGGLE_STATUS "Enable F10 Toggle Status support (win32/x11)" OFF)
 option(WITH_RAWNET "Enable Uthernet emulation" OFF)
 option(WITH_ATBRIDGE "Enable AT Bridge" OFF)
+option(WITH_BACKTRACE "Enable PC Backtracing" OFF)
 option(WITH_STATIC "Enable static link" OFF)
 set(READLINE "AUTO" CACHE STRING "Readline library (AUTO, NONE, READLINE, LIBEDIT)")
 
@@ -277,6 +278,10 @@ endif()
 
 if (TOGGLE_STATUS)
 	target_compile_definitions(GSplus PUBLIC TOGGLE_STATUS)
+endif()
+
+if (WITH_BACKTRACE)
+	target_compile_definitions(GSplus PUBLIC GSPLUS_BACKTRACE)
 endif()
 
 if (WITH_DEBUGGER)

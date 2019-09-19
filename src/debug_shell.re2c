@@ -1071,6 +1071,44 @@ static void backtrace_helper(Pc_log *ptr) {
 	const char *opcode_string = disasm_opcodes[opcode];
 	const char *comment = NULL;
 
+	/* special case for IRQ */
+	if (opcode == 0 && operand >= 0xff0000) {
+		int n;
+		n = printf("%02x/%04x:", kpc >> 16, kpc & 0xffff);
+		while (n < 40) { fputc(' ', stdout); ++n; }
+		fputs("IRQ", stdout);
+
+		static const char *types[] = {
+			"scc 1 zero count",
+			"scc 1 tx",
+			"scc 1 rx",
+			"scc 0 zero count",
+			"scc 0 tx",
+			"scc 0 rx",
+			"scanline",
+			"1 second",
+			".25 second",
+			"vbl",
+			"adb keyboard",
+			"adb data",
+			"adb mouse",
+			"doc"
+		};
+
+		int comma = 0;
+		for (unsigned i = 0; i < 14; ++i) {
+			if (~opcode & (1 << i)) continue;
+
+			if (comma) putchar(',');
+			putchar(' ');
+			fputs(types[i], stdout);
+			comma = 1;
+		}
+
+		putchar('\n');
+		return;
+	}
+
 	buffer2[bsize++] = opcode;
 	switch(args) {
 		case 1:

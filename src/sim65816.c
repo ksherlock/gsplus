@@ -1637,8 +1637,8 @@ void take_irq(int is_it_brk)      {
 	extern unsigned g_pc_log_index;
 
 	Pc_log *ptr = &g_pc_log[g_pc_log_index];
-	ptr->dbank_kpc = (engine.dbank << 24) + kpc;
-	ptr->instr = -1;
+	ptr->dbank_kpc = (engine.dbank << 24) + engine.kpc;
+	ptr->instr = 0xff0000 | g_irq_pending; /* fake break */
 	ptr->xreg_yreg = (engine.xreg << 16) + engine.yreg;
 	ptr->psr_acc = (engine.psr << 16) + engine.acc;
 	ptr->stack_direct = (engine.stack << 16) + engine.direct;
