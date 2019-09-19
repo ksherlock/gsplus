@@ -184,21 +184,14 @@ static const char *gs_basename(const char *cp) {
 }
 
 
-struct handle {
-	word32 handle;
-	word32 address;
-	word32 size;
-	word16 owner;
-	word16 attr;
-};
 
-static struct handle *g_handles = 0;
+static struct handle_info *g_handles = 0;
 static unsigned g_num_handles = 0;
 static unsigned g_handles_loaded = 0;
 
 static int handle_compare(const void *a, const void *b) {
-	const struct handle *aa = a;
-	const struct handle *bb = b;
+	const struct handle_info *aa = a;
+	const struct handle_info *bb = b;
 
 	int rv = aa->address - bb->address;
 	if (rv == 0) rv = aa->handle - bb->handle;
@@ -206,7 +199,7 @@ static int handle_compare(const void *a, const void *b) {
 	//return (int)aa->handle - (int)bb->handle;
 }
 
-static void load_handle_type(word32 address, struct handle **handle_ptr, unsigned *handle_count) {
+static void load_handle_type(word32 address, struct handle_info **handle_ptr, unsigned *handle_count) {
 
 	enum {
 		offset_address = 0,
@@ -223,7 +216,7 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 
 	unsigned capacity = 0;
 	unsigned count = 0;
-	struct handle *ptr = 0;
+	struct handle_info *ptr = 0;
 
 	word32 hh;
 	hh = debug_read_24(address);
@@ -234,7 +227,7 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 		unsigned bank = hh >> 16;
 		if (bank != 0xe0 && bank != 0xe1) break;
 
-		struct handle h;
+		struct handle_info h;
 		h.handle = hh;
 		h.address = debug_read_32(hh + offset_address);
 		h.size = debug_read_24(hh + offset_size);
@@ -244,7 +237,7 @@ static void load_handle_type(word32 address, struct handle **handle_ptr, unsigne
 
 		if (count >= capacity) {
 			capacity += growth_factor;
-			struct handle *tmp = realloc(ptr, capacity * sizeof(struct handle));
+			struct handle_info *tmp = realloc(ptr, capacity * sizeof(struct handle_info));
 			if (!tmp) {
 				free(ptr);
 				return;
@@ -277,8 +270,34 @@ static void load_handles(void) {
 
 	load_handle_type(MemList, &g_handles, &g_num_handles);
 
-	qsort(g_handles, g_num_handles, sizeof(struct handle), handle_compare);
+	qsort(g_handles, g_num_handles, sizeof(struct handle_info), handle_compare);
 
+}
+
+const struct handle_info *lookup_handle(uint32_t handle) {
+	if (!g_handles_loaded) load_handles();
+	for (unsigned i = 0; i < g_num_handles; ++i) {
+		if (g_handles[i].handle == handle) return &g_handles[i];
+	}
+	return NULL;
+}
+
+static int handle_address_compare(const void *a, const void *b) {
+	const struct handle_info *key = a;
+	const struct handle_info *h = b;
+
+	if (key->address < h->address) return -1;
+	if (key->address >= h->address + h->size) return 1;
+	return 0;
+}
+
+const struct handle_info *lookup_address(uint32_t address) {
+	if (!g_handles_loaded) load_handles();
+
+	struct handle_info key = { 0 };
+	key.address = address;
+	/* binary lookup.  handles must be sorted by address */
+	return bsearch(&key, g_handles, g_num_handles, sizeof(struct handle_info), handle_address_compare);
 }
 
 

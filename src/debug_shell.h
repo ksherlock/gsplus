@@ -52,8 +52,8 @@ extern uint32_t sweet16_asm_shell(uint32_t addr);
 extern uint32_t do_list(uint32_t address, int lines);
 
 
-struct handle_info *lookup_handle(uint32_t handle);
-struct handle_info *lookup_address(uint32_t address);
+const struct handle_info *lookup_handle(uint32_t handle);
+const struct handle_info *lookup_address(uint32_t address);
 
 
 
