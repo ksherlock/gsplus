@@ -2390,6 +2390,48 @@ ok:
 
 }
 
+static void debug_goodies_names(word32 addr) {
+
+	/* \names command */
+	/* given a user id or handle, print all inline debug names */
+
+	fputs(" id  address name\n", stdout);
+	fputs("---- ------- ----\n", stdout);
+
+	const struct handle_info *h = lookup_handle(addr);
+	if (!h){
+		printf("\n\n*** invalid handle\n", stderr);
+		return;
+	}
+
+	addr = h->address;
+	unsigned end = h->address + h->size;
+
+	const uint8_t *page = debug_read_page(addr);
+	unsigned offset = addr & 0xff;
+	while (addr < end) {
+		unsigned c = page[offset];
+		if (c == 0x82) {
+			const char *name = get_inline_debug_name(addr);
+			if (name) {
+				printf("%04x %02x/%04x %s\n", h->owner, addr >> 16, addr & 0xffff, name);
+
+				unsigned len = strlen(name);
+				addr += len + 4;
+				offset += len + 4;
+				/* +1 below */
+			}
+		}
+
+		++addr;
+		offset = (offset + 1) & 0xff;
+		if (!offset) {
+			page = debug_read_page(addr); 
+		}
+	}
+
+}
+
 
 static word32 do_mem_assign(word32 addr, const char *cp) {
 	/* "string" -> pokes ASCII chars */
@@ -3091,6 +3133,10 @@ command:
 			return 0;
 		}
 
+		"\\names" eol {
+			debug_goodies_names(explicit_address);
+			return 0;
+		}
 
 		"\\text" eol {
 			do_text();
