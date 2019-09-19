@@ -6,13 +6,77 @@
  */
 
 #include "defcomm.h"
-#include <stdint.h>
 
+#include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+
+#ifdef __NeXT__
+#include <libc.h>
+#endif
+
+#ifdef HPUX
+#include <machine/inline.h> /* for GET_ITIMER */
+#endif
+
+#ifdef SOLARIS
+#include <sys/filio.h>
+#endif
+
+
+#if !defined(_WIN32) && !defined(UNDER_CE) // OG
+#include <sys/ioctl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
+
+#ifndef UNDER_CE // OG CE SPecific
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+// OG Adding support for open
+#ifdef WIN32
+#include <io.h>
+#endif
+
+#else
+extern int errno;
+extern int open(const char *name, int, ...);
+extern int read(int, char *, int);
+extern int close(int);
+extern int write(int fd, const void *buffer, unsigned int count);
+extern int lseek(int, int, int);
+struct stat {
+  int st_size;
+};
+extern int stat(const char *name, struct stat *);
+extern int fstat(int, struct stat *);
+#define O_RDWR 1
+#define O_BINARY 2
+#define O_RDONLY 4
+#define O_WRONLY 8
+#define O_CREAT 16
+#define O_TRUNC 32
+#define EAGAIN 11
+#define EINTR 4
+
+#endif
+
+
+#ifndef O_BINARY
+/* work around some Windows junk */
+#define O_BINARY 0
+#endif
+
+
 
 // OG redirect printf to console
 #ifdef ACTIVEGS
-#include <stdio.h>
 extern "C" int outputInfo(const char *format, ...);
 extern "C" int fOutputInfo(FILE *, const char *format, ...);
 #define printf outputInfo
@@ -60,69 +124,6 @@ void U_STACK_TRACE();
 
 #define MAXNUM_HEX_PER_LINE 32
 
-#ifdef __NeXT__
-#include <libc.h>
-#endif
-
-#if !defined(_WIN32) && !defined(UNDER_CE) // OG
-#include <sys/ioctl.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
-
-#ifndef UNDER_CE // OG CE SPecific
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-// OG Adding support for open
-#ifdef WIN32
-#include <io.h>
-#endif
-
-#else
-extern int errno;
-extern int open(const char *name, int, ...);
-extern int read(int, char *, int);
-extern int close(int);
-extern int write(int fd, const void *buffer, unsigned int count);
-extern int lseek(int, int, int);
-struct stat {
-  int st_size;
-};
-extern int stat(const char *name, struct stat *);
-extern int fstat(int, struct stat *);
-#define O_RDWR 1
-#define O_BINARY 2
-#define O_RDONLY 4
-#define O_WRONLY 8
-#define O_CREAT 16
-#define O_TRUNC 32
-#define EAGAIN 11
-#define EINTR 4
-
-#endif
-
-#ifdef HPUX
-#include <machine/inline.h> /* for GET_ITIMER */
-#endif
-
-#ifdef SOLARIS
-#include <sys/filio.h>
-#endif
-
-#ifndef O_BINARY
-/* work around some Windows junk */
-#define O_BINARY 0
-#endif
 
 STRUCT(Pc_log) {
   double dcycs;
@@ -362,6 +363,7 @@ STRUCT(Emustate_word32list) {
 
 #include "iwm.h"
 #include "protos.h"
+
 // OG Added define for joystick
 #define JOYSTICK_TYPE_KEYPAD 0
 #define JOYSTICK_TYPE_MOUSE 1
