@@ -547,7 +547,7 @@ word32 get_memory8_io_stub(word32 addr, byte *stat, double *fcycs_ptr,
     *fcycs_ptr = fcycles;
     return get_memory_io((addr), fcycs_ptr);
   } else {
-    ptr = stat - wstat + (addr & 0xff);
+    ptr = PTR_OFFSET(stat, addr);
     return *ptr;
   }
 }
@@ -616,7 +616,7 @@ void set_memory8_io_stub(word32 addr, word32 val, byte *stat, double *fcycs_ptr,
 
   wstat = PTR2WORD(stat) & 0xff;
 
-  ptr = stat - wstat + ((addr)&0xff);
+  ptr = PTR_OFFSET(stat, addr);
   fcycles = *fcycs_ptr;
   if (wstat & BANK_IO2_TMP) {
     FCYCLES_ROUND;
@@ -1020,7 +1020,7 @@ word32 get_remaining_operands(word32 addr, word32 opcode, word32 psr,
   CYCLES_PLUS_2;                                                               \
   stat = GET_PAGE_INFO_RD(((addr) >> 8) & 0xffff);                             \
   wstat = PTR2WORD(stat) & 0xff;                                               \
-  ptr = stat - wstat + ((addr)&0xff);                                          \
+  ptr = PTR_OFFSET(stat, addr);                                                \
   arg_ptr = ptr;                                                               \
   opcode = *ptr;                                                               \
   if (wstat & BANK_BREAK) {                                                    \
