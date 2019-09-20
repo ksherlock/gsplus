@@ -92,6 +92,7 @@ typedef uint16_t word16;
 typedef uint32_t word32;
 typedef uint64_t word64;
 #define PTR2WORD(a) ((uintptr_t)(a))
+#define WORD2PTR(a) ((void *)(a))
 
 void U_STACK_TRACE();
 
