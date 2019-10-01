@@ -9,6 +9,7 @@
 #include <ctype.h>
 
 #include "defc.h"
+#include "string_extra.h"
 
 
 #ifdef WIN32
@@ -700,6 +701,7 @@ int debug_goodies_e0(unsigned number) {
 int debug_goodies_e1(unsigned number) {
 	return debug_goodies_list(number, 0xe1, 6);
 }
+
 
 int debug_find(const char *needle) {
 	/* todo -- tools should display function address and set g_prev_address. */

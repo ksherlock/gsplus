@@ -12,6 +12,8 @@
 #include "glog.h"
 #include "imagewriter.h"
 
+#include "string_extra.h"
+
 #include <dirent.h>
 
 #ifdef HAVE_RAWNET
@@ -21,9 +23,6 @@
 #if defined _MSC_VER
 
 typedef unsigned int mode_t;
-
-#define strcasecmp stricmp
-#define strncasecmp strnicmp
 
 #endif
 

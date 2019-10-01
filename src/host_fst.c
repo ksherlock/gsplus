@@ -37,6 +37,8 @@
 #include "gsos.h"
 #include "fst.h"
 
+#include "string_extra.h"
+
 #include "host_common.h"
 
 

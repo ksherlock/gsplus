@@ -20,10 +20,7 @@
 
 #include "host_common.h"
 
-#ifdef _MSC_VER
-#define strcasecmp stricmp
-#define strncasecmp strnicmp
-#endif
+#include "string_extra.h"
 
 
 extern Engine_reg engine;

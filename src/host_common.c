@@ -9,14 +9,12 @@
 #include "gsos.h"
 #include "fst.h"
 
+#include "string_extra.h"
+
 #ifdef _WIN32
 #include <Windows.h>
 #endif
 
-#ifdef _MSC_VER
-#define strcasecmp stricmp
-#define strncasecmp strnicmp
-#endif
 
 
 #include "host_common.h"

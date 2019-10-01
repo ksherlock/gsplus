@@ -79,6 +79,15 @@ option(WITH_BACKTRACE "Enable PC Backtracing" OFF)
 option(WITH_STATIC "Enable static link" OFF)
 set(READLINE "AUTO" CACHE STRING "Readline library (AUTO, NONE, READLINE, LIBEDIT)")
 
+set(CMAKE_REQUIRED_INCLUDES string.h)
+check_function_exists(strcasecmp HAVE_STRCASECMP)
+check_function_exists(strncasecmp HAVE_STRNCASECMP)
+check_function_exists(strcasestr HAVE_STRCASESTR)
+
+configure_file(string_extra.h.in string_extra.h)
+
+
+
 set(generated_headers 8inst_c.h 16inst_c.h 8inst_s.h 16inst_s.h size_c.h size_s.h 8size_s.h 16size_s.h)
 add_custom_command(
 	OUTPUT 8inst_c.h 16inst_c.h 8inst_s.h ${CMAKE_CURRENT_BINARY_DIR}/16inst_s.h
@@ -189,6 +198,7 @@ add_executable(GSplus WIN32 MACOSX_BUNDLE
 	smartport.c sound.c sound_driver.c video.c scc_socket_driver.c glog.c
 	imagewriter.cpp scc_imagewriter.c scc_llap.c options.c
 
+	string_extra.c
 	disasm.c
 	debug_shell.c
 	debug_template.c
