@@ -75,8 +75,10 @@ void get_default_window_size(LPSIZE size) {
   rect.left = 0;
   rect.top = 0;
   rect.bottom = X_A2_WINDOW_HEIGHT;
+#ifdef KEGS_STATUS_LINES
   if (g_win_status_debug)
     rect.bottom += (MAX_STATUS_LINES * 16);
+#endif
   rect.right = X_A2_WINDOW_WIDTH;
 
   // Calculate the window rectangle, which is the client area plus non-client area (e.g. frame and caption).

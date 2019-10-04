@@ -2803,10 +2803,12 @@ void video_update_through_line(int line)      {
     }
     refresh_border();
 
+#ifdef KEGS_STATUS_LINES
     if(g_status_refresh_needed) {
       g_status_refresh_needed = 0;
       x_redraw_status_lines();
     }
+#endif
   }
   GET_ITIMER(end_time);
 
