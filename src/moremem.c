@@ -1199,7 +1199,8 @@ void set_byte_at_address(int addr, int value) {
 const unsigned char *debug_read_page(word32 address) {
 
   address = (address >> 8) & 0xffff;
-  return (uint8_t *)GET_PAGE_INFO_RD(address);
+  uint8_t *rv = (uint8_t *)GET_PAGE_INFO_RD(address);
+  return (uint8_t *)((ptrdiff_t)rv & ~0xff);
 }
 
 /* debug routines.  does not invoke the i/o machinery */
