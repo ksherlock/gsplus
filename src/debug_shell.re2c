@@ -301,6 +301,40 @@ const struct handle_info *lookup_address(uint32_t address) {
 }
 
 
+
+struct enumerate_handles_cookie {
+	unsigned index;
+	unsigned user_id;
+	unsigned mask;
+};
+
+static void enumerate_handles_init(unsigned user_id, struct enumerate_handles_cookie *cookie) {
+	unsigned mask = 0x0000;
+
+	memset(cookie, 0, sizeof(*cookie));
+	cookie->user_id = user_id & 0xffff;
+
+	if (user_id & 0xf000) mask |= 0xf000;
+	if (user_id & 0x0f00) mask |= 0x0f00;
+	if (user_id & 0x00f0) mask |= 0x00f0;
+	if (user_id & 0x000f) mask |= 0x000f;
+	cookie->mask = mask;
+}
+
+static const struct handle_info *enumerate_handles(struct enumerate_handles_cookie *cookie) {
+
+	while (cookie->index < g_num_handles) {
+		struct handle_info *info = &g_handles[++cookie->index];
+		if ((info->owner & cookie->mask) == cookie->user_id) {
+			return info;
+		}
+	}
+
+	return NULL;
+}
+
+
+
 struct loader_entry {
 	/* first because they're used for sorting */
 	word16 user_id;
@@ -2218,6 +2252,35 @@ set_psr:
 	return 0;
 }
 
+static word32 _debug_goodies_find(word32 begin, word32 end, int needle_size, word32 success, int *map) {
+
+	word32 rv = 0;
+	word32 st = 0;
+	word32 addr = begin;
+	const uint8_t *page = debug_read_page(addr);
+	unsigned offset = addr & 0xff;
+	unsigned count = 0;
+
+	while (addr < end) {
+
+		unsigned c = page[offset];
+		st = (st << 1) | 1;
+		st &= map[c];
+		if (st & success) {
+			/* match! */
+			rv = addr + 1 - needle_size;
+			++count;
+			do_hexdump(addr + 1 - needle_size, (needle_size + 15) >> 4);
+		}
+		++addr;
+		offset = (offset + 1) & 0xff;
+		if (!offset) {
+			page = debug_read_page(addr); 
+		}
+	}
+	return rv;
+}
+
 static word32 debug_goodies_find(word32 addr, const char *cp) {
 
 
@@ -2256,7 +2319,7 @@ static word32 debug_goodies_find(word32 addr, const char *cp) {
 		ws { continue; }
 		eol { goto ok; }
 
-		"*" {
+		"." {
 			/* wildcard */
 
 			for (int j = 0; j < 256; ++j)
