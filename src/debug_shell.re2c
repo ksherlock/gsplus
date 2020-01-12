@@ -2695,30 +2695,81 @@ update:
 	return 1;
 }
 
-static void do_help(void) {
+static void do_help(char type) {
 
-	fputs(
-		"  *                       Print registers\n"
-		"  reg=value               Assign register (a,x,y,etc)\n"
-		"  reset                   Reset computer\n"
-		"  quit                    Exit debugger\n"
-		"  s                       Single step\n"
-		"  g                       Go\n"
-		"  bp                      List PC breakpoints\n"
-		"  mp                      List memory breakpoints\n"
-		"\n"
-		"  [address];l             List\n"
-		"  [address];h             Hexdump\n"
-		"  [address];bp            Set PC breakpoint\n"
-		"  [address];bp-           Remove PC breakpoint\n"
-		"  [address];mp            Set memory breakpoint\n"
-		"  [address];mp-           Remove memory breakpoint\n"
-		"  [address]\\temp name    Display template\n"
-		"\n"
-		"\n"
-		"Address = 12/3456, 123456, or 1234\n"
-		"Register = %a, %x, %y, %pc, etc\n",
-		stdout);
+	if (type == 0) {
+		fputs(
+			"  *                       Print registers\n"
+			"  reg=value               Assign register (a,x,y,etc)\n"
+			"  reset                   Reset computer\n"
+			"  quit                    Exit debugger\n"
+			"  s                       Step in\n"
+			"  n                       Step over\n"
+			"  g                       Go\n"
+			"  !                       Mini assembler\n"
+			"  !!                      SWEET16 Mini assembler\n"
+			"\n"
+			"  :                       Write memory\n"
+			"  l                       List\n"
+			"  \"                       Search NList.data\n"
+			"  h                       Handle info by handle\n"
+			"  i                       Handle info by owner\n"
+			"  w                       Handle info by address\n"
+			"  t                       Tool lookup\n"
+			"\n"
+			"Address = 12/3456, 123456, or 1234\n"
+			"Register = %a, %x, %y, %pc, etc\n",
+			stdout);
+	}
+	if (type == ';') {
+		fputs(
+			";h                       Hexdump\n"
+			";l                       List\n"
+			";s                       Print stack\n"
+			"",
+			stdout);
+	}
+	if (type == '\\') {
+		fputs(
+			"\\brk                      Set/List breakpoints\n"
+			"\\mbrk                     Set/List memory breakpoints\n"
+			"\\tbrk                     Set/List tool breakpoints\n"
+			"\\osbrk                    Set/List gs/os breakpoints\n"
+			"\n"
+			"\\clrbrk                   Clear breakpoints\n"
+			"\\clrmbrk                  Clear memory breakpoints\n"
+			"\\clrtbrk                  Clear tool breakpoints\n"
+			"\\clrosbrk                 Clear gs/os breakpoints\n"
+			"\n"
+			"\\temp name                Display a template\n"
+			"\\ids\n"
+			"\\00\n"
+			"\\01\n"
+			"\\e0\n"
+			"\\e1\n"
+			"\\os\n"
+			"\\p8\n"
+			"\\err\n"
+			"\\rtype\n"
+			"\\find\n"
+			"\\names\n"
+			"\\text\n"
+			"\\omf\n"
+			"\\bt\n"
+			"\\hsize\n",
+
+			stdout);
+	}
+	if (type == '>') {
+		fputs(
+			">brk                      Intercept BRKs\n"
+			">cop                      Intercept COPs\n"
+			">e                        Assume e bit in listings\n"
+			">m                        Assume m bit in listings\n"
+			">x                        Assume x bit in listings\n"
+			">mx                       Assume mx bits in listings\n",
+			stdout);
+	}
 }
 
 
@@ -2753,7 +2804,11 @@ static int parse_command(const char *cp) {
 
 		("q" | "quit" | "exit" | "bye") eol { return 'q'; }
 		"reset" eol { do_reset(); return 0; }
-		("help" | "?") eol { do_help(); return 0; }
+
+		("help" | "?") eol { do_help(0); return 0; }
+		"?\\" eol { do_help('\\'); return 0; }
+		"?>" eol { do_help('>'); return 0; }
+		"?;" eol { do_help(';'); return 0; }
 
 		"!!" eol {
 			g_prev_address = sweet16_asm_shell(g_prev_address);
@@ -2763,6 +2818,8 @@ static int parse_command(const char *cp) {
 			g_prev_address = mini_asm_shell(g_prev_address);
 			return 0;
 		}
+
+
 
 		"0>" { return do_setting(YYCURSOR, 0); }
 		"1>" { return do_setting(YYCURSOR, 1); }
