@@ -1313,7 +1313,7 @@ int do_dis_json(char *buf, word32 kpc, int accsize, int xsize, int op_provided, 
       sprintf(buf_disasm,"%s   [$%0*x],Y",out,args*2,val);
       break;
 
-    case IMMED:
+    case IMMEDIATE:
       sprintf(buf_disasm,"%s   #$%0*x",out, args*2, val);
       break;
 
