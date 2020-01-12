@@ -976,10 +976,47 @@ void do_registers(void) {
 		engine.dbank, engine.direct, engine.stack,
 		engine.acc, engine.xreg, engine.yreg,
 		M, Q, M & 0x02 ? 1 : 0,
-		engine.psr & 0xff, ps, psr >> 8
+		psr & 0xff, ps, psr >> 8
 	);
 
 }
+
+void do_pclog_registers(Pc_log *ptr) {
+
+
+	unsigned kpc = ptr->dbank_kpc & 0xffffff;
+	unsigned psr = ptr->psr_acc >> 16;
+
+	char ps[9];
+
+	ps[0] = '0' | ((psr >> 7) & 0x01);
+	ps[1] = '0' | ((psr >> 6) & 0x01);
+	ps[2] = '0' | ((psr >> 5) & 0x01);
+	ps[3] = '0' | ((psr >> 4) & 0x01);
+	ps[4] = '0' | ((psr >> 3) & 0x01);
+	ps[5] = '0' | ((psr >> 2) & 0x01);
+	ps[6] = '0' | ((psr >> 1) & 0x01);
+	ps[7] = '0' | ((psr >> 0) & 0x01);
+	ps[8] = 0;
+
+	fputs(" K/PC   B   D    S    A    X    Y    M   Q   L  P  nvmxdizc e\n", stdout);
+
+	printf("%02x/%04x %02x %04x %04x %04x %04x %04x  --  --  -  %02x %s %1x\n",
+		kpc >> 16, kpc & 0xffff,
+		ptr->dbank_kpc >> 24,
+		ptr->stack_direct & 0xffff,
+		ptr->stack_direct >> 16,
+		ptr->psr_acc  & 0xffff,
+		ptr->xreg_yreg >> 16,
+		ptr->xreg_yreg & 0xffff,
+		psr & 0xff, ps, psr >> 8
+	);
+
+}
+
+
+
+
 word32 do_hexdump(word32 address, int lines) {
 	static char hex[] = "0123456789abcdef";
 
@@ -1106,7 +1143,7 @@ static void do_text(void) {
 static word32 format_operand(char *buffer, word32 address, unsigned mode, unsigned args, unsigned operand);
 
 #if defined(GSPLUS_BACKTRACE)
-static void backtrace_helper(Pc_log *ptr) {
+static void backtrace_helper(Pc_log *ptr, int ix) {
 
 	if (ptr->dbank_kpc == 0 && ptr->instr == 0) return;
 
@@ -1207,7 +1244,7 @@ static void backtrace_helper(Pc_log *ptr) {
 	}
 
 	int n;
-	n = printf("%02x/%04x:", kpc >> 16, kpc & 0xffff);
+	n = printf("%02x: %02x/%04x:", ix, kpc >> 16, kpc & 0xffff);
 	for(int i = 0; i < bsize; ++i)
 		n += printf(" %02x", buffer2[i]);
 	while (n < 40) { fputc(' ', stdout); ++n; }
@@ -1219,16 +1256,27 @@ static void backtrace_helper(Pc_log *ptr) {
 	fputc('\n', stdout);
 }
 
-static void backtrace(void) {
+static void backtrace(unsigned index) {
 	extern Pc_log g_pc_log[32];
 	extern unsigned g_pc_log_index;
 
-	for (int i = g_pc_log_index; i < 32; ++i) {
-		backtrace_helper(&g_pc_log[i]);
-	}
+	if (index == 0) {
+		index = 32;
+		for (int i = g_pc_log_index; i < 32; ++i) {
+			backtrace_helper(&g_pc_log[i], index--);
+		}
 
-	for (int i = 0; i < g_pc_log_index; ++i) {
-		backtrace_helper(&g_pc_log[i]);
+		for (int i = 0; i < g_pc_log_index; ++i) {
+			backtrace_helper(&g_pc_log[i], index--);
+		}
+	} else {
+
+		if (index < 1 || index > 32) return;
+
+		unsigned i = (g_pc_log_index + 32 - index) & 31;
+
+		do_pclog_registers(&g_pc_log[i]);
+		backtrace_helper(&g_pc_log[i], index);
 	}
 }
 #endif
@@ -3270,7 +3318,7 @@ command:
 
 		"\\bt" eol {
 			#if defined(GSPLUS_BACKTRACE)
-			backtrace();
+			backtrace(explicit_address);
 			#else
 			fputs("\\bt not enabled in this build.\n", stderr);
 			#endif
