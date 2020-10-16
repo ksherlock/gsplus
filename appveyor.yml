@@ -1,6 +1,6 @@
 version: 1.0.{build}
 image:
-  - Visual Studio 2017
+  - Visual Studio 2019
   - Ubuntu1804
 configuration:
 - mingw32-sdl
@@ -13,9 +13,9 @@ configuration:
 matrix:
   exclude:
     - configuration: linux-sdl
-      image: Visual Studio 2017
+      image: Visual Studio 2019
     - configuration: linux-headless
-      image: Visual Studio 2017
+      image: Visual Studio 2019
     - configuration: mingw32-sdl
       image: Ubuntu1804
     - configuration: mingw32-gdi
@@ -29,7 +29,7 @@ for:
   - # mingw64/gdi
     matrix:
       only:
-        - image: Visual Studio 2017
+        - image: Visual Studio 2019
           configuration: mingw64-gdi
     install:
       - cmd: set MSYSTEM=MINGW64
@@ -49,7 +49,7 @@ for:
   - # mingw32/gdi
     matrix:
       only:
-        - image: Visual Studio 2017
+        - image: Visual Studio 2019
           configuration: mingw32-gdi
     install:
       - cmd: set MSYSTEM=MINGW32
@@ -69,7 +69,7 @@ for:
   - # mingw32/sdl
     matrix:
       only:
-        - image: Visual Studio 2017
+        - image: Visual Studio 2019
           configuration: mingw32-sdl
     install:
       - cmd: set MSYSTEM=MINGW32
@@ -89,7 +89,7 @@ for:
   - # msys2/gdi
     matrix:
       only:
-        - image: Visual Studio 2017
+        - image: Visual Studio 2019
           configuration: msys-gdi
     install:
       - cmd: set MSYSTEM=MSYS
